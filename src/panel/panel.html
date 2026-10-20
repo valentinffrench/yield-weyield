@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Yield WeYield</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<div id="app" data-conn="wait">
+
+  <header class="top">
+    <div class="brand"><span class="logo" aria-hidden="true"></span>Yield</div>
+    <div class="status" role="status"><i class="dot" aria-hidden="true"></i><span id="statusTxt">Connexion…</span></div>
+  </header>
+
+  <section id="empty" class="empty" hidden>
+    <h1 id="emptyTitle"></h1>
+    <p id="emptyText"></p>
+    <button id="emptyBtn" class="btn primary" hidden></button>
+  </section>
+
+  <main id="content" hidden>
+
+    <div class="sticky">
+      <div class="pk" role="group" aria-label="Période de travail">
+        <button class="ib" data-op="prev" aria-label="Période précédente" title="Période précédente (←)">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg></button>
+        <div class="pkc" aria-live="polite"><div class="pkn" id="pkn"></div><div class="pkd" id="pkd"></div></div>
+        <button class="ib" data-op="next" aria-label="Période suivante" title="Période suivante (→)">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg></button>
+      </div>
+
+      <div class="row between">
+        <div class="chips" role="group" aria-label="Calques affichés sur le graphique">
+          <button class="chip" role="switch" data-layer="periods"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2.5 6.5 2.5 2.5 4.5-5.5"/></svg>Périodes</button>
+          <button class="chip" role="switch" data-layer="tiers"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2.5 6.5 2.5 2.5 4.5-5.5"/></svg>Paliers</button>
+          <button class="chip" role="switch" data-layer="signals"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2.5 6.5 2.5 2.5 4.5-5.5"/></svg>Signaux</button>
+        </div>
+        <button class="link" id="today" data-op="auto" hidden>Période en cours</button>
+      </div>
+
+      <div class="j0" id="j0box">
+        <div class="j0l">
+          <div><span class="lbl">J0</span> <strong id="j0d"></strong></div>
+          <div class="mut" id="j0n"></div>
+        </div>
+        <div class="stepper" role="group" aria-label="Décalage de J0 par rapport au début de la période">
+          <button class="ib sm" data-off="-1" aria-label="Décaler J0 d'un jour plus tôt" title="Un jour plus tôt">−</button>
+          <output id="off" aria-live="polite"></output>
+          <button class="ib sm" data-off="1" aria-label="Décaler J0 d'un jour plus tard" title="Un jour plus tard">+</button>
+          <button class="ib sm" id="offReset" data-off="0" aria-label="Remettre le décalage à 0" title="Remettre à 0" hidden>
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.6-3.7M3 2.5v3h3"/></svg></button>
+        </div>
+      </div>
+    </div>
+
+    <section class="card hero" id="hero" aria-label="Synthèse de la période"></section>
+
+    <section class="results" aria-label="Détail par palier ou par période">
+      <div class="seg" role="tablist" aria-label="Vue des résultats">
+        <button role="tab" data-tab="zones" id="tabZones">Paliers</button>
+        <button role="tab" data-tab="periods">Périodes</button>
+        <button role="tab" data-tab="signals">Signaux</button>
+      </div>
+      <div id="msgs"></div>
+      <div id="tbl" class="tblw"></div>
+      <div id="sig" hidden></div>
+      <div class="row between foot" id="tblfoot">
+        <span class="mut small">RPJ = CA ÷ jours loués, pondéré</span>
+        <span class="row"><span class="mut small" id="live" aria-live="polite"></span><button class="btn sm" id="copy" title="Copier le tableau (Excel / Sheets)">Copier</button></span>
+      </div>
+    </section>
+
+    <details class="settings" id="settings">
+      <summary><span>Réglages</span><span class="mut small" id="setSum"></span></summary>
+      <div class="setbody">
+        <fieldset>
+          <legend>Découpage en périodes</legend>
+          <div class="flds">
+            <div class="fld"><label for="gnum">Période n°</label><input id="gnum" class="num" type="number" min="1" max="999" inputmode="numeric"></div>
+            <div class="fld grow"><label for="gdate">commence le</label><input id="gdate" type="date"></div>
+            <button class="btn" id="gauto" title="P1 = lundi de la semaine de référence du graphique">Auto</button>
+          </div>
+          <div class="flds">
+            <div class="fld"><label for="glen">Durée d'une période</label><input id="glen" class="num" type="number" min="1" max="366" inputmode="numeric"></div>
+            <div class="seg" role="group" aria-label="Unité de durée"><button data-unit="d">jours</button><button data-unit="w">semaines</button></div>
+          </div>
+          <p class="hint" id="ghint"></p>
+        </fieldset>
+        <fieldset id="dataset" hidden>
+          <legend>Données</legend>
+          <div class="fld"><label for="dsel">Graphique lu par l'extension</label><select id="dsel"></select></div>
+        </fieldset>
+        <fieldset id="seriesset">
+          <legend>Séries lues</legend>
+          <p class="hint">Détectées automatiquement par leur nom ; à corriger ici si une valeur est fausse ou absente. Mémorisé pour ce type de graphique.</p>
+          <div id="roles" class="roles"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Paliers (cost-breaks)</legend>
+          <div id="tiers" class="tiers"></div>
+          <div class="row between">
+            <button class="btn sm" id="tadd">+ Ajouter un palier</button>
+            <button class="link" id="treset">Valeurs par défaut</button>
+          </div>
+        </fieldset>
+        <fieldset id="jevset">
+          <legend>Jev (TypeSafe)</legend>
+          <div class="fld"><label for="jkey">Clé API</label>
+            <div class="flds"><input id="jkey" class="grow" type="password" autocomplete="off" spellcheck="false" placeholder="Coller la clé puis Enregistrer"><button class="btn sm" id="jsave">Enregistrer</button></div></div>
+          <div class="flds">
+            <div class="fld"><label for="jmodel">Modèle</label><select id="jmodel"><option value="jev-latest">jev-latest</option><option value="jev-preview">jev-preview</option></select></div>
+            <button class="btn sm" id="jtest">Tester la clé</button><button class="link" id="jclear">Effacer la clé</button>
+          </div>
+          <p class="hint" id="jstat"></p>
+          <p class="hint">Envoyé à TypeSafe : écarts relatifs (%), délais et libellés de période. Jamais de € ni de CA. Aucun envoi sans clic sur « Analyser avec Jev ». La clé reste dans ce navigateur (prototype).</p>
+          <div class="row between"><button class="btn sm" id="jcsv" title="Copie le journal 👍/👎 (tableur)">Copier le journal (CSV)</button><button class="link" id="jwipe">Vider le journal</button></div>
+        </fieldset>
+        <button class="link" id="diag" title="Copie la liste des graphiques et de leurs séries, à coller dans la conversation si un chiffre manque">Copier le diagnostic des graphiques</button>
+      </div>
+    </details>
+
+  </main>
+</div>
+<script src="../core.js"></script>
+<script src="../signals.js"></script>
+<script src="panel.js"></script>
+</body>
+</html>

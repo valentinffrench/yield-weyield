@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>WeYield (maquette de test)</title>
+<style>
+  body{margin:0;background:#eef1f5;font:14px Roboto,Arial,sans-serif;color:#222}
+  header{background:#2c3e50;color:#fff;padding:10px 16px}
+  .page{padding:12px 16px;max-width:1280px;margin:0 auto}
+  .filters{background:#fff;padding:8px;border-radius:6px;margin-bottom:8px}
+  app-chart{display:block;background:#fff;border-radius:6px;padding:4px}
+  app-new-bookings-chart,app-new-bookings-variation-chart{display:block}
+  .pagetitle{font-size:34px;margin:6px 0}
+</style></head>
+<body>
+<header>WeYield · Réservations (maquette)</header>
+<div class="page">
+  <div class="filters" id="filters"></div>
+  <div class="host" id="hostwrap"><app-chart id="ac1"><div class="ttl" style="font-size:26px">Évolution des réservations en 2026 vs 2025</div><div id="c" style="height:430px"></div></app-chart></div>
+  <p>Pied de page de l'application.</p>
+</div>
+<script src="/highcharts.js"></script>
+<script>
+  // Dispositions (?layout=…) :
+  //   (aucune)  graphique « complet » : les six séries bookings/* à la fois (sert aux tests fonctionnels)
+  //   two       graphique empilé sans RPJ, puis le graphique complet
+  //   lastyear  bookings/lastyear RÉEL : 11 séries, dont « Series N » anonymes, flottes et N-1 en pointillé ; menu « Avancé (…) »
+  //   final     bookings/final RÉEL : `lastyear` sans point, lastyearFinal, lastyearFinalRpd
+  //   evolution new-bookings/* RÉEL : premier graphique empilé (Series N, delta, current, fleet…) + second (thisyear / lastyear /
+  //             revenue / ly_revenue, N-1 en 'Dash') ; radios de fenêtre ; pas de menu « Avancé » ; bande native `past-band`
+  Highcharts.setOptions({ time: { useUTC: true } });
+  const D = 86400000, t0 = Date.UTC(2026, 5, 15), n = 120;
+  const Q = new URLSearchParams(location.search), LAYOUT = Q.get('layout'), MISSING = Q.get('missing') || '';
+  const rnd = (i, a) => Math.sin(i * 12.9898 + a) * 0.5 + 0.5;
+  const mk = (base, amp, seed, fn) => Array.from({ length: n }, (_, i) => [t0 + i * D, +(fn ? fn(i) : base + amp * rnd(i, seed)).toFixed(2)]);
+  const season = i => 1 + 0.25 * Math.sin((i - 20) / 18);
+  const cur = mk(0, 0, 1, i => 60 * season(i) + 14 * rnd(i, 1));
+  const ly  = mk(0, 0, 2, i => 55 * season(i) + 14 * rnd(i, 2));
+  const lyf = mk(0, 0, 3, i => 66 * season(i) + 10 * rnd(i, 3));
+  const rcur = mk(0, 0, 4, i => 31 + 5 * Math.sin(i / 9) + 2 * rnd(i, 4));
+  const rly  = mk(0, 0, 5, i => 29.5 + 5 * Math.sin(i / 9) + 2 * rnd(i, 5));
+  const rlyf = mk(0, 0, 6, i => 30.2 + 5 * Math.sin(i / 9) + 2 * rnd(i, 6));
+  const wave = (b, a, s) => mk(0, 0, s, i => b + a * Math.sin(i / 9 + s));
+  const REAL = LAYOUT === 'lastyear' || LAYOUT === 'final' || LAYOUT === 'evolution';
+
+  // ----- barre de filtres : menu « Avancé (…) » présent sur bookings/*, absent sur new-bookings/* -----
+  document.getElementById('filters').innerHTML = LAYOUT === 'evolution'
+    ? 'Filtres : Catégorie ▾ · Intervalles : <a href="#">30 jours</a> · <a href="#">7 jours</a> · <a href="#">1 jour</a> · <button>Appliquer</button>'
+    : 'Filtres : Catégorie ▾ · Affichage : <a class="dropdown-toggle nav-link" id="metric" href="#">Avancé (Revenu par jour)</a> · <button>Appliquer</button>';
+
+  // ----- titres : l'en-tête visible est un voisin du graphique ; des <h3> « chargement » masqués s'intercalent (vrai WeYield) -----
+  const LOADING = '<h3 style="visibility:hidden;height:27px;margin:0">Données en cours de chargement, merci de patienter quelques secondes..</h3>';
+  if (LAYOUT === 'evolution') {
+    document.getElementById('hostwrap').innerHTML = '<h2>Évolution des réservations</h2>' + LOADING + '<app-new-bookings-chart><app-chart id="ac0"><div id="c0" style="height:300px"></div></app-chart></app-new-bookings-chart>'
+      + '<h2>Évolution des réservations en 2026 vs 2025</h2>'
+      + '<div role="radiogroup" id="win">' + [7, 14, 21, 28].map((v, k) => `<label><input type="radio" name="win" value="${v}"${k === 0 ? ' checked' : ''}> ${v} derniers jours</label> `).join('') + '</div>'
+      + '<app-new-bookings-variation-chart><app-chart id="ac1"><div id="c" style="height:430px"></div></app-chart></app-new-bookings-variation-chart>';
+  } else if (LAYOUT === 'lastyear' || LAYOUT === 'final') {
+    document.getElementById('hostwrap').innerHTML = '<div class="pagetitle">Réservations</div>' + LOADING + LOADING + '<app-chart id="ac1"><div id="c" style="height:430px"></div></app-chart>';
+  }
+
+  // ----- séries -----
+  const L = (name, type, axis, dash, data, extra) => Object.assign({ name, type, yAxis: axis, data, dashStyle: dash }, extra || {});
+  const seriesBook = [   // « complet »
+    L('current', 'column', 0, undefined, cur, { color: '#7aa6d6' }), L('lastyear', 'line', 0, undefined, ly, { color: '#b0b8c4' }), L('lastyearFinal', 'line', 0, undefined, lyf, { color: '#e0a458' }),
+    L('currentRpd', 'line', 1, undefined, rcur, { color: '#2c3e50' }), L('lastyearRpd', 'line', 1, 'Dash', rly, { color: '#8a96a6' }), L('lastyearFinalRpd', 'line', 1, 'Dash', rlyf, { color: '#c9822b' }),
+  ];
+  const seriesLastyear = [   // section 3 du spec, dans l'ordre observé (arearange → area : highcharts-more n'est pas chargé)
+    L('Series 1', 'line', 0, undefined, wave(300, 60, 0)), L('Series 2', 'area', 0, undefined, cur, { color: '#cfcfcf' }), L('lastyear', 'area', 0, undefined, ly, { color: '#b9cbe6' }),
+    L('current', 'line', 0, undefined, cur, { color: '#111' }), L('fleet', 'line', 0, undefined, mk(0, 0, 0, () => 500), { color: '#c0c' }),
+    L('availableFleet', 'area', 0, undefined, mk(0, 0, 0, () => 300)), L('lastYearReferenceFleet', 'line', 0, 'dash', mk(0, 0, 0, () => 450)),
+    L('lastYearAvailableReferenceFleet', 'area', 0, 'dash', mk(0, 0, 0, () => 280)), L('Series 9', 'line', 1, undefined, wave(36, 3, 3)),
+    L('currentRpd', 'line', 1, undefined, rcur, { color: '#e67e22' }), L('lastyearRpd', 'line', 1, 'dash', rly, { color: '#e67e22' }),
+  ];
+  const seriesFinal = [
+    L('lastyear', 'line', 0, undefined, []), L('lastyearFinal', 'area', 0, 'dash', lyf, { color: '#d4c7e6' }), L('Series 1', 'line', 0, undefined, wave(300, 60, 0)), L('Series 2', 'line', 0, undefined, wave(280, 40, 1)),
+    L('current', 'line', 0, undefined, cur, { color: '#111' }), L('fleet', 'line', 0, undefined, mk(0, 0, 0, () => 500)), L('availableFleet', 'area', 0, undefined, mk(0, 0, 0, () => 300)),
+    L('lastYearFleet', 'line', 0, 'dash', mk(0, 0, 0, () => 440)), L('lastYearAvailableFleet', 'area', 0, 'dash', mk(0, 0, 0, () => 280)),
+    L('Series 3', 'line', 1, undefined, wave(36, 3, 3)), L('Series 4', 'line', 1, undefined, wave(33, 3, 4)),
+    L('currentRpd', 'line', 1, undefined, rcur, { color: '#e67e22' }), L('lastyearFinalRpd', 'line', 1, 'dash', rlyf, { color: '#e67e22' }),
+  ];
+  // new-bookings/* second graphique : thisyear / lastyear (N-1 en 'Dash') / revenue / ly_revenue. Jours sans volume net : volume 0 et RPJ NaN (0/0).
+  const zero = i => i % 17 === 3;
+  const nb = arr => arr.map(([t, v], i) => [t, zero(i) ? 0 : v]), nbr = arr => arr.map(([t, v], i) => [t, zero(i) ? NaN : v]);
+  const seriesEvo = [
+    L('thisyear', 'area', 0, undefined, nb(cur), { color: '#7aa6d6' }), L('lastyear', 'area', 0, 'Dash', nb(ly), { color: '#c5d8ee' }),
+    L('revenue', 'line', 1, undefined, nbr(rcur), { color: '#e67e22' }), L('ly_revenue', 'line', 1, 'Dash', nbr(rly), { color: '#e67e22' }),
+  ];
+  const series = ({ lastyear: seriesLastyear, final: seriesFinal, evolution: seriesEvo }[LAYOUT] || seriesBook).filter(s => !MISSING.split(',').includes(s.name));
+  const ref = Date.UTC(2026, 7, 4);
+  // bande de référence : `past-band` (de 1970 à la date de référence) sur les dispositions réelles ; `today` sur les maquettes historiques
+  const band = REAL ? { id: 'past-band', from: 0, to: ref, color: 'rgba(0,0,0,.04)' } : { id: 'today', from: ref - 3 * D, to: ref, color: 'rgba(0,150,0,.08)' };
+  const chart = Highcharts.chart('c', {
+    accessibility: { enabled: false }, chart: { zoomType: 'x' }, title: { text: null }, credits: { enabled: false },
+    xAxis: { type: 'datetime', plotBands: [band] },
+    yAxis: [{ title: { text: 'En location' } }, { title: { text: 'Revenu par jour' }, opposite: true }],
+    legend: { enabled: true }, series,
+  });
+  // Angular garde l'instance dans __ngContext__ de l'élément hôte
+  document.getElementById('ac1').__ngContext__ = [null, { cmp: { chart } }];
+  // premier graphique : empilé, sans RPJ ni N-1 (two : durées ; evolution : Series N, delta, current, fleet, availableFleet)
+  if (LAYOUT === 'two' || LAYOUT === 'evolution') {
+    if (LAYOUT === 'two') document.getElementById('hostwrap').insertAdjacentHTML('afterbegin', '<app-chart id="ac0"><div class="ttl" style="font-size:26px">Évolution des réservations</div><div id="c0" style="height:300px"></div></app-chart>');
+    const stackSeries = LAYOUT === 'evolution'
+      ? [...Array.from({ length: 9 }, (_, k) => L('Series ' + (k + 1), 'areaspline', 0, undefined, wave(10 + k, 3, k))), ...Array.from({ length: 4 }, () => L('delta', 'areaspline', 0, undefined, wave(8, 2, 5))),
+         L('current', 'areaspline', 0, undefined, wave(60, 10, 8)), L('fleet', 'line', 0, undefined, mk(0, 0, 0, () => 500)), L('availableFleet', 'area', 0, undefined, mk(0, 0, 0, () => 300))]
+      : [L('durée courte', 'areaspline', 0, undefined, mk(0, 0, 7, i => 20 + 8 * rnd(i, 7))), L('durée moyenne', 'areaspline', 0, undefined, mk(0, 0, 8, i => 15 + 6 * rnd(i, 8))), L('durée longue', 'areaspline', 0, undefined, mk(0, 0, 9, i => 12 + 4 * rnd(i, 9)))];
+    const stack = Highcharts.chart('c0', { chart: { type: 'areaspline' }, title: { text: null }, credits: { enabled: false }, accessibility: { enabled: false },
+      xAxis: { type: 'datetime', plotBands: [{ id: REAL ? 'past-band' : 'past', from: REAL ? 0 : t0, to: ref, color: 'rgba(0,0,0,.04)' }] }, yAxis: { title: { text: null } }, plotOptions: { areaspline: { stacking: 'normal' } }, series: stackSeries });
+    document.getElementById('ac0').__ngContext__ = [null, { cmp: { chart: stack } }];
+  }
+  window.__mock = { cur, ly, lyf, rcur, rly, rlyf, ref, zero };
+</script>
+</body></html>

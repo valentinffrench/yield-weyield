@@ -1,0 +1,12 @@
+{
+  "name": "yield-weyield",
+  "version": "3.3.0",
+  "private": true,
+  "description": "Chrome side-panel extension for WeYield: pricing periods, cost-break zones, ADR vs last year, over/under-pricing signals.",
+  "license": "MIT",
+  "author": "Valentin Ffrench",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:browser": "cd test/browser && npm install && npm test"
+  }
+}

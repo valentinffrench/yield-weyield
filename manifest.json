@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "Yield WeYield – panneau latéral",
+  "version": "3.3.0",
+  "description": "Périodes et paliers (cost-breaks) sur le graphique Réservations de WeYield, RPJ N / N-1 / N-1 final et signaux prix × rythme (règles et Jev) dans un panneau latéral.",
+  "minimum_chrome_version": "114",
+  "permissions": [
+    "sidePanel",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://apps.weyield.io/*",
+    "https://api.typesafe.ai/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_title": "Yield WeYield – ouvrir le panneau"
+  },
+  "side_panel": {
+    "default_path": "src/panel/panel.html"
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://apps.weyield.io/*"
+      ],
+      "js": [
+        "src/core.js",
+        "src/chart.js",
+        "src/engine.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://apps.weyield.io/*"
+      ],
+      "js": [
+        "src/relay.js"
+      ],
+      "run_at": "document_start"
+    }
+  ]
+}
