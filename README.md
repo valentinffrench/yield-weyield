@@ -6,6 +6,25 @@ Extension Chrome pour le point yield sur `apps.weyield.io` → **Réservations**
 
 Chrome 114 ou plus récent.
 
+![Vue d'ensemble : le graphique de WeYield avec périodes, paliers et signaux, et le panneau latéral](docs/img/vue-ensemble.png)
+
+*Le graphique garde toute sa largeur ; périodes (P11, P12…), paliers (1-2j, 3-6j…) et signaux (▲ P13, ▲ P15, ? P21) y sont dessinés, et tout le reste vit dans le panneau latéral de Chrome. Captures réalisées sur une maquette à données synthétiques.*
+
+<table>
+<tr>
+<td width="33%"><img src="docs/img/panel-paliers.png" alt="Panneau : période, décalage de J0, RPJ N / N-1 et tableau par palier"><br><sub><b>Paliers</b> : RPJ N, N-1 et N-1 final par palier, avec le décalage de J0.</sub></td>
+<td width="33%"><img src="docs/img/panel-signaux.png" alt="Panneau : onglet Signaux, verdicts par règles et par Jev"><br><sub><b>Signaux</b> : verdict prix × volume par période, règles à côté de Jev, 👍 / 👎.</sub></td>
+<td width="33%"><img src="docs/img/panel-sombre.png" alt="Panneau en thème sombre"><br><sub><b>Thème sombre</b> automatique.</sub></td>
+</tr>
+</table>
+
+<details>
+<summary>Réglages (découpage en périodes, séries lues, paliers, clé Jev)</summary>
+
+![Réglages du panneau](docs/img/reglages.png)
+
+</details>
+
 ## Installation / mise à jour
 1. `chrome://extensions` → activer le **mode développeur**.
 2. Première fois : **Charger l'extension non empaquetée** → choisir ce dossier. Mise à jour : icône ↻ sur la carte de l'extension, puis recharger l'onglet WeYield.

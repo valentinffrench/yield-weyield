@@ -83,7 +83,10 @@
     L('thisyear', 'area', 0, undefined, nb(cur), { color: '#7aa6d6' }), L('lastyear', 'area', 0, 'Dash', nb(ly), { color: '#c5d8ee' }),
     L('revenue', 'line', 1, undefined, nbr(rcur), { color: '#e67e22' }), L('ly_revenue', 'line', 1, 'Dash', nbr(rly), { color: '#e67e22' }),
   ];
-  const series = ({ lastyear: seriesLastyear, final: seriesFinal, evolution: seriesEvo }[LAYOUT] || seriesBook).filter(s => !MISSING.split(',').includes(s.name));
+  // ?clean=1 (captures du README) : helpers, flottes et aires de flotte masqués, légende retirée
+  const CLEAN = Q.get('clean') === '1', HIDE = /^Series|availableFleet|AvailableReferenceFleet|^fleet$|ReferenceFleet/i;
+  const tidy = list => (CLEAN ? list.map(x => (HIDE.test(x.name) ? Object.assign({}, x, { visible: false }) : x.type === 'area' ? Object.assign({}, x, { fillOpacity: 0.25 }) : x)) : list);
+  const series = tidy({ lastyear: seriesLastyear, final: seriesFinal, evolution: seriesEvo }[LAYOUT] || seriesBook).filter(s => !MISSING.split(',').includes(s.name));
   const ref = Date.UTC(2026, 7, 4);
   // bande de référence : `past-band` (de 1970 à la date de référence) sur les dispositions réelles ; `today` sur les maquettes historiques
   const band = REAL ? { id: 'past-band', from: 0, to: ref, color: 'rgba(0,0,0,.04)' } : { id: 'today', from: ref - 3 * D, to: ref, color: 'rgba(0,150,0,.08)' };
@@ -91,7 +94,7 @@
     accessibility: { enabled: false }, chart: { zoomType: 'x' }, title: { text: null }, credits: { enabled: false },
     xAxis: { type: 'datetime', plotBands: [band] },
     yAxis: [{ title: { text: 'En location' } }, { title: { text: 'Revenu par jour' }, opposite: true }],
-    legend: { enabled: true }, series,
+    legend: { enabled: !CLEAN }, series,
   });
   // Angular garde l'instance dans __ngContext__ de l'élément hôte
   document.getElementById('ac1').__ngContext__ = [null, { cmp: { chart } }];
