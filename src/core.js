@@ -80,6 +80,12 @@
     return { from, to, nDays, full, cur, ly, lyf, dLy: pct(cur, ly), dLyf: pct(cur, lyf), dVol: vpct(cur, ly), dVolF: vpct(cur, lyf) };
   }
 
+  // Palier cumulé : du début du plus court palier jusqu'à la fin de celui-ci, CA ÷ jours loués sur toute la plage.
+  // Le RPJ d'une date mêle toutes les locations en cours ce jour-là : la zone 21-30j de P13 contient aussi les départs P14 en 14-20j, P15 en 7-13j…
+  // Le cumulé lit donc d'un bloc les jours qu'une location partie à J0 traverse. Paliers « jusqu'à lui » = ceux qui finissent au plus tard avec lui.
+  const cumZones = (S, zones) => zones.map(z => Object.assign({ label: z.label, a: z.a, b: z.b, ci: z.ci },
+    zoneStats(S, Math.min(...zones.filter(o => o.b <= z.b).map(o => o.from)), z.to)));
+
   // ---------- état persistant : valeurs par défaut et mise à niveau (pures, testées sous Node) ----------
   // rolesSchema : les réglages de séries (maps) et le graphique forcé (dataIdx) enregistrés avant que les dispositions réelles de WeYield
   // soient connues étaient faux (des volumes servaient de prix). Quand le schéma change, on les remet à zéro UNE fois : ne pas toucher à `v`,
@@ -108,5 +114,5 @@
   }
 
   Object.assign(WY, { D, DEFAULT_TIERS, ROLES, ROLE_LABEL, ROLES_SCHEMA, stateDefaults, upgradeState, PALETTE, utcDay, isoDay, parseISO, mondayOf, fmtDM, fmtDMY,
-    parseTiers, tiersToText, j0Of, tierZones, gridLenDays, makeGrid, agg, pct, zoneStats, toTSV });
+    parseTiers, tiersToText, j0Of, tierZones, gridLenDays, makeGrid, agg, pct, zoneStats, cumZones, toTSV });
 })(typeof window !== 'undefined' ? window : globalThis);

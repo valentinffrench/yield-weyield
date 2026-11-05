@@ -12,7 +12,7 @@
 
   // ---------- préférences propres au panneau ----------
   const PREF_KEY = 'wypPanel';
-  const prefs = Object.assign({ tab: 'zones', settings: false, source: 'jev' }, (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)); } catch (e) { return null; } })());
+  const prefs = Object.assign({ tab: 'zones', settings: false, source: 'jev', cum: false },(() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)); } catch (e) { return null; } })());
   const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) {} };
 
   // ---------- formats ----------
@@ -126,8 +126,11 @@
 
     $$('.seg [data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === prefs.tab)));
     $('#tabZones').textContent = 'Paliers';
-    const sigTab = prefs.tab === 'signals';
+    const sigTab = prefs.tab === 'signals', cum = cumOn();
     $('#tbl').hidden = sigTab; $('#tblfoot').hidden = sigTab; $('#sig').hidden = !sigTab;
+    $('#cumbar').hidden = prefs.tab !== 'zones';
+    $$('[data-cum]').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.cum === '1') === !!prefs.cum)));
+    $('#tblnote').textContent = cum ? 'Cumulé depuis le 1er palier, pondéré' : 'RPJ = CA ÷ jours loués, pondéré';
     renderMsgs();
     if (sigTab) renderSignals(); else renderTable();
     syncSettings();
@@ -152,6 +155,9 @@
     const cmp = (o, d, off) => (off || !o ? '<td>–</td>' : `<td>${rpj(o.rpd)}<br>${pill(d)}</td>`);
     return `<td>${h.rpd && r.cur ? `<b>${rpj(r.cur.rpd)}</b><small>${ca(r.cur.rev)}</small>` : '–'}</td>${cmp(r.ly, r.dLy, !h.ly)}${cmp(r.lyf, r.dLyf, !h.lyf)}`;
   }
+  // Vue cumulée des paliers (onglet Paliers seulement) : chaque ligne = du premier palier jusqu'à elle, calculé par le moteur.
+  const cumOn = () => prefs.tab === 'zones' && !!prefs.cum && !!(view && view.cumZones);
+  const shownZones = () => (cumOn() ? view.cumZones : view.zones);
   function renderTable() {
     const v = view, h = v.has;
     const partial = r => (r.nDays < r.full ? `<small>⚠ ${r.nDays}/${r.full} j chargés</small>` : '');
@@ -162,7 +168,8 @@
         : '<tr><td colspan="4" class="mut">Aucune période dans la plage du graphique.</td></tr>';
     } else {
       const head = `<tr class="head"><td><span class="zl">${pLabel(v.selP)} · départs</span><small>${rng(v.selStats.from, v.selStats.to)}</small>${partial(v.selStats)}</td>${cells(v.selStats)}</tr>`;
-      body = head + (v.zones.length ? v.zones.map((z, i) => `<tr data-z="${i}" tabindex="0"><td><i style="background:rgb(${PALETTE[z.ci % PALETTE.length]})"></i><span class="zl">${z.label}</span><small>${rng(z.from, z.to)}</small>${partial(z)}</td>${cells(z)}</tr>`).join('')
+      const zs = shownZones();
+      body = head + (zs.length ? zs.map((z, i) => `<tr data-z="${i}" tabindex="0"><td><i style="background:rgb(${PALETTE[z.ci % PALETTE.length]})"></i><span class="zl">${z.label}</span><small>${rng(z.from, z.to)}</small>${partial(z)}</td>${cells(z)}</tr>`).join('')
         : '<tr><td colspan="4" class="mut">Aucun palier : ajoutez-en dans les réglages.</td></tr>');
     }
     $('#tbl').innerHTML = `<table><thead><tr><th></th><th>RPJ N</th>
@@ -293,6 +300,7 @@
     if (d.layer) return send({ op: 'toggle', name: d.layer });
     if (d.off != null && view) { const o = +d.off; return send({ op: 'config', patch: { offset: o === 0 ? 0 : view.offset + o } }); }
     if (d.tab) { prefs.tab = d.tab; savePrefs(); return view && render(); }
+    if (d.cum != null) { prefs.cum = d.cum === '1'; savePrefs(); return view && render(); }
     if (d.k != null && t.tagName !== 'BUTTON') return send({ op: 'select', k: +d.k });
   });
   document.addEventListener('keydown', e => {
@@ -307,7 +315,8 @@
   $('#sig').addEventListener('toggle', e => { const d = e.target; if (d.classList && d.classList.contains('jd')) { d.open ? openJd.add(+d.dataset.k) : openJd.delete(+d.dataset.k); } }, true);
 
   // survol d'une ligne → la zone ressort sur le graphique
-  const hover = (zone, period) => { const k = `${zone}|${period}`; if (k === lastHover) return; lastHover = k; send({ op: 'hover', zone, period }); };
+  // en vue cumulée, le palier survolé ressort avec tous les plus courts (les jours réellement additionnés)
+  const hover = (zone, period) => { const cum = zone != null && cumOn(), k = `${zone}|${period}|${cum}`; if (k === lastHover) return; lastHover = k; send({ op: 'hover', zone, period, cum }); };
   const hoverRow = e => { const r = e.target.closest ? e.target.closest('tr[data-z], tr[data-k], .sigc') : null; if (!r) return; r.dataset.z != null ? hover(+r.dataset.z, null) : hover(null, +r.dataset.k); };
   ['#tbl', '#sig'].forEach(sel => { const el = $(sel); el.addEventListener('mouseover', hoverRow); el.addEventListener('focusin', hoverRow); el.addEventListener('mouseleave', () => hover(null, null)); el.addEventListener('focusout', () => hover(null, null)); });
 
@@ -318,7 +327,7 @@
     if (!view) return;
     const rows = prefs.tab === 'periods'
       ? view.periodRows.map(r => Object.assign({ label: r.p.label }, r))
-      : [Object.assign({ label: `${view.selP.label} départs` }, view.selStats), ...view.zones.map(z => Object.assign({ label: `${view.selP.label} ${z.label}` }, z))];
+      : [Object.assign({ label: `${view.selP.label} départs` }, view.selStats), ...shownZones().map(z => Object.assign({}, z, { label: `${view.selP.label} ${z.label}${cumOn() ? ' cumulé' : ''}` }))];
     navigator.clipboard.writeText(WY.toTSV(rows)).then(() => flash('Copié ✓'), () => flash('Copie impossible'));
   });
 

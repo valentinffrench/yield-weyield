@@ -218,9 +218,9 @@
     overlayItems(ax).map(b => b.id).forEach(id => { ax.removePlotBand(id); ax.removePlotLine(id); });
   }
 
-  // plan : { showPeriods, showTiers, periods:[{k,num,from,to,label}], selK, j0, zones:[{label,from,to,ci}], hot:{zone,period} }
+  // plan : { showPeriods, showTiers, periods:[{k,num,from,to,label}], selK, j0, zones:[{label,b,from,to,ci}], hot:{zone,period,cum} }
   // Rangées de libellés en haut : périodes (y=12), puis paliers décalés sur 3 rangées ; « J0 » en bas.
-  // hot = élément survolé dans le panneau : il ressort, le reste s'estompe.
+  // hot = élément survolé dans le panneau : il ressort, le reste s'estompe. hot.cum : vue cumulée, le palier ressort avec tous les plus courts.
   function paint(chart, plan) {
     clearOverlay(chart);
     const ax = chart.xAxis[0];
@@ -251,9 +251,9 @@
       ax.addPlotBand(band); n++;
     });
     if (plan.showTiers && plan.j0 != null) {
-      const dim = hot.zone != null;
+      const dim = hot.zone != null, hz = dim ? plan.zones[hot.zone] : null;
       plan.zones.forEach((z, i) => {
-        const c = WY.PALETTE[z.ci % WY.PALETTE.length], on = hot.zone === i;
+        const c = WY.PALETTE[z.ci % WY.PALETTE.length], on = hot.zone === i || !!(hot.cum && hz && z.b <= hz.b);
         ax.addPlotBand({ id: `${PID}-t${i}`, from: z.from - 0.5 * D, to: z.to + 0.5 * D, zIndex: 1,
           color: `rgba(${c},${on ? .34 : dim ? .06 : .14})`, borderColor: `rgb(${c})`, borderWidth: on ? 2 : 1,
           label: { text: z.label, align: 'center', verticalAlign: 'top', y: 26 + (i % 3) * 13 + dy,

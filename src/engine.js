@@ -73,6 +73,7 @@
         series: S.series, roles: S.roles, autoRoles: S.auto, mapped: state.maps[ckey] || {}, ckey,
         selStats: WY.zoneStats(S, selP.from, selP.to),
         zones,
+        cumZones: WY.cumZones(S, zones),
         periodRows: periods.map(p => Object.assign({ p }, WY.zoneStats(S, p.from, p.to))),
       },
       plan: { showPeriods: state.periods, showTiers: state.tiers, periods, selK: selP.k, j0, zones },
@@ -133,7 +134,7 @@
         const keys = Object.keys(maps); if (keys.length > 20) delete maps[keys[0]];
         state.maps = maps; changed(); return;
       }
-      case 'hover': hot = { zone: Number.isInteger(m.zone) ? m.zone : null, period: Number.isInteger(m.period) ? m.period : null }; paintAll(); return;
+      case 'hover': hot = { zone: Number.isInteger(m.zone) ? m.zone : null, period: Number.isInteger(m.period) ? m.period : null, cum: m.cum === true }; paintAll(); return;
       case 'bye': hot = {}; paintAll(); return;
       case 'diag': { list = WY.findCharts(); const d = WY.pickData(list, state.dataIdx, state.maps, state.dataKey); return post({ type: 'diag', data: WY.diagnose(list, d ? d.i : null, state.maps) }); }
     }

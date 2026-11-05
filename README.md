@@ -1,4 +1,4 @@
-# Yield WeYield – panneau latéral (v3.3.0)
+# Yield WeYield – panneau latéral (v3.4.0)
 
 *Chrome side-panel extension for [WeYield](https://www.weyield.io) revenue-management users: overlays pricing periods and cost-break zones on the booking charts, compares ADR (RPJ) with last year / last year final, and flags over- or under-pricing with simple rules and an optional TypeSafe "Jev" check. Unofficial, not affiliated with WeYield or TypeSafe. Documentation below in French.*
 
@@ -38,6 +38,7 @@ Le panneau suit l'onglet actif. S'il affiche « Page non connectée », recharge
 - **J0 et décalage** : J0 = premier jour de la période choisie + le décalage (− / + en jours, ↺ pour remettre à 0). Les paliers se calculent depuis J0 : un palier « a-b j » couvre J0+a → J0+b. La ligne « départs » de la période n'est jamais décalée.
 - **Synthèse** : RPJ N de la période avec Δ vs N-1 et vs N-1 final.
 - **Tableau** : *Paliers de Pk* (départs + un palier par ligne) ou *Toutes les périodes* (clic ou Entrée sur une ligne = la choisir). **Survoler une ligne la fait ressortir sur le graphique.** Chaque colonne N-1 / N-1 final donne la valeur et l'écart. **Copier** exporte en TSV (Excel / Sheets).
+- **Paliers : Par palier | Cumulé** (bascule au-dessus du tableau, mémorisée). *Par palier* : RPJ des seuls jours du palier. *Cumulé* : chaque palier va du premier palier jusqu'à lui inclus (21-30j = J0+1 → J0+30), pour N, N-1 et N-1 final. Raison : le RPJ d'une date mêle toutes les locations en cours ce jour-là ; la zone 21-30j de P13 contient aussi les départs de P14 en 14-20j, de P15 en 7-13j, etc. Le survol fait ressortir tous les paliers additionnés ; la copie suit la vue (libellés « cumulé »).
 - **Réglages** (repliés, résumé en un coup d'œil) : « Période n° 10 commence le 24/07/2026 », durée d'une période, liste des paliers (un champ par palier, couleur identique au graphique, corrigés si incohérents). Tout s'applique immédiatement.
 - Thème clair / sombre automatique.
 
@@ -80,6 +81,7 @@ Les séries anonymes (« Series N »), les flottes et les `delta` ne sont jamais
 
 ## Lecture des chiffres
 - RPJ = CA ÷ jours loués, moyenne pondérée par le nombre de voitures en location (`OnRent` × `Revenu par jour`, comme l'infobulle WeYield).
+- Cumulé : même formule sur toute la plage du premier palier à la fin du palier (CA cumulé ÷ jours loués cumulés), pas une moyenne simple des RPJ des paliers. Les jours entre deux paliers non contigus comptent (une location plus longue les traverse).
 - N-1 = série `lastyear` (même date) ; N-1 final = série `lastyearFinal`. Si l'affichage WeYield n'en charge qu'une, l'autre colonne est barrée et un message l'indique.
 - Seuls les jours chargés dans le graphique comptent : `⚠ 4/7 j chargés` signale une zone coupée.
 

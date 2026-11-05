@@ -96,6 +96,34 @@ test('zoneStats : zone partiellement hors données, séries absentes', () => {
   assert.equal(out.cur, null);
 });
 
+test('cumZones : chaque palier = du premier palier jusqu\'à lui, CA ÷ jours loués sur toute la plage', () => {
+  const j0 = day('2026-08-01');
+  const vol = {}, rpd = {};
+  for (let i = 1; i <= 6; i++) { const k = WY.isoDay(j0 + i * D); vol[k] = i; rpd[k] = 10 * i; }  // jour J0+i : i voitures à 10·i €
+  const S = { range: [j0, j0 + 10 * D], cur: { vol: series(vol), rpd: series(rpd) }, ly: null, lyf: null };
+  const zones = WY.tierZones(j0, [[1, 2], [3, 6]]).map(z => Object.assign(z, WY.zoneStats(S, z.from, z.to)));
+  const [c12, c36] = WY.cumZones(S, zones);
+  assert.equal(c12.cur.rpd, zones[0].cur.rpd);                     // le premier palier cumulé = lui-même
+  assert.equal(WY.isoDay(c36.from), '2026-08-02');
+  assert.equal(WY.isoDay(c36.to), '2026-08-07');
+  const rev = [1, 2, 3, 4, 5, 6].reduce((s, i) => s + i * 10 * i, 0), days = 21;
+  assert.ok(Math.abs(c36.cur.rpd - rev / days) < 1e-9);            // pondéré : 910 / 21 ≈ 43,3, pas la moyenne simple des deux paliers (16,7 + 47,8) / 2
+  assert.equal(c36.label, '3-6j');
+  assert.equal(c36.ci, 1);
+  assert.equal(c36.full, 6);
+});
+
+test('cumZones : paliers dans le désordre ou avec un trou → plage continue depuis le plus court', () => {
+  const j0 = day('2026-08-01');
+  const S = { range: [j0, j0 + 40 * D], cur: null, ly: null, lyf: null };
+  const zones = WY.tierZones(j0, [[7, 13], [1, 2]]);
+  const [c713, c12] = WY.cumZones(S, zones);
+  assert.equal(WY.isoDay(c713.from), '2026-08-02');                // part de 1-2j, même listé après
+  assert.equal(c713.full, 13);                                     // les jours 3 à 6 (hors paliers) comptent : une location de 7-13 j les traverse
+  assert.equal(WY.isoDay(c12.from), '2026-08-02');
+  assert.equal(c12.full, 2);
+});
+
 test('toTSV : autant de champs que d\'en-têtes, virgule décimale, séries absentes vides', () => {
   const S = { range: [day('2026-08-01'), day('2026-08-05')], cur: { vol: series({ '2026-08-02': 10 }), rpd: series({ '2026-08-02': 31.234 }) }, ly: null, lyf: null };
   const tsv = WY.toTSV([Object.assign({ label: 'P12 départs' }, WY.zoneStats(S, day('2026-08-02'), day('2026-08-02')))]);

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Yield WeYield – panneau latéral",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "Périodes et paliers (cost-breaks) sur le graphique Réservations de WeYield, RPJ N / N-1 / N-1 final et signaux prix × rythme (règles et Jev) dans un panneau latéral.",
   "minimum_chrome_version": "114",
   "permissions": [

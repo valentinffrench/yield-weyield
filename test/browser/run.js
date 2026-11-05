@@ -139,6 +139,29 @@ const near = (a, b, e = 0.06) => Math.abs(a - b) < e;
   hb = await bands();
   ok('fin du survol : retour à la normale', hb.find(b => b.id === 'wyp-t2').bw === 1);
 
+  // 5b. vue cumulée : chaque palier = du premier palier (1-2j) jusqu'à lui
+  ok('bascule Par palier | Cumulé visible, « Par palier » par défaut', await P.locator('#cumbar').isVisible() && (await P.getAttribute('[data-cum="0"]', 'aria-pressed')) === 'true');
+  await P.click('[data-cum="1"]'); await wait(200);
+  const c36 = await expect('2026-08-07', 1, 6), c713 = await expect('2026-08-07', 1, 13), d12 = await expect('2026-08-07', 1, 2);
+  const rc12 = await row('tr[data-z="0"]'), rc36 = await row('tr[data-z="1"]'), rc713 = await row('tr[data-z="2"]');
+  ok('cumulé 3-6j : 8 → 13 août, valeurs exactes (N, N-1, N-1 final)', /8 → 13 août/.test(rc36[0]) && near(num(rc36[1]), c36[0]) && near(num(rc36[2]), c36[1]) && near(num(rc36[3]), c36[2]), rc36.slice(0, 4).join(' | '));
+  ok('cumulé 7-13j : 8 → 20 août, valeurs exactes', /8 → 20 août/.test(rc713[0]) && near(num(rc713[1]), c713[0]) && near(num(rc713[3]), c713[2]), rc713.slice(0, 4).join(' | '));
+  ok('cumulé 1-2j = palier seul', near(num(rc12[1]), d12[0]));
+  ok('ligne « départs » inchangée en cumulé', near(num((await row('tr.head'))[1]), dep[0]));
+  ok('pied de tableau : définition du cumulé', /Cumulé/.test(await txt('#tblnote')), await txt('#tblnote'));
+  await P.hover('tr[data-z="2"]'); await wait(300);
+  hb = await bands(); const bw = i => (hb.find(b => b.id === `wyp-t${i}`) || {}).bw;
+  ok('survol cumulé 7-13j : 1-2j, 3-6j et 7-13j ressortent, 14-20j non', bw(0) === 2 && bw(1) === 2 && bw(2) === 2 && bw(3) === 1, [0, 1, 2, 3].map(bw).join());
+  await P.mouse.move(380, 20); await wait(300);
+  await P.click('#copy'); await wait(200);
+  const cl = ((await P.evaluate(() => window.__copied)) || '').split('\n').map(l => l.split('\t'));
+  ok('copie en cumulé : libellés « cumulé », plage depuis le 8 août', cl.length === 8 && /P12 3-6j cumulé/.test(cl[3][0]) && cl[3][1] === '2026-08-08' && cl[3][2] === '2026-08-13', cl[3] && cl[3].slice(0, 3).join(' | '));
+  await P.screenshot({ path: path.join(OUT, 'shot-2b-cumul.png'), fullPage: true });
+  await P.click('[data-tab=periods]'); await wait(150);
+  ok('bascule masquée hors onglet Paliers', await P.locator('#cumbar').isHidden());
+  await P.click('[data-tab=zones]'); await P.click('[data-cum="0"]'); await wait(200);
+  ok('retour « Par palier » : 3-6j = 10 → 13 août', /10 → 13 août/.test((await row('tr[data-z="1"]'))[0]));
+
   // 6. clic sur le graphique → le panneau suit
   const pos = await A.evaluate(() => { const c = Highcharts.charts[0], r = c.container.getBoundingClientRect(); return { x: r.left + c.xAxis[0].toPixels(Date.parse('2026-08-16T00:00:00Z'), false), y: r.top + c.plotTop + c.plotHeight / 2 }; });
   await A.bringToFront(); await A.mouse.click(pos.x, pos.y); await wait(400);

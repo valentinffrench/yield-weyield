@@ -64,11 +64,18 @@
         <button role="tab" data-tab="periods">Périodes</button>
         <button role="tab" data-tab="signals">Signaux</button>
       </div>
+      <div class="row between" id="cumbar">
+        <span class="mut small" id="cumlbl">RPJ de chaque palier</span>
+        <div class="seg" role="group" aria-labelledby="cumlbl">
+          <button data-cum="0" title="RPJ des seuls jours du palier">Par palier</button>
+          <button data-cum="1" title="RPJ du premier palier jusqu'à celui-ci inclus">Cumulé</button>
+        </div>
+      </div>
       <div id="msgs"></div>
       <div id="tbl" class="tblw"></div>
       <div id="sig" hidden></div>
       <div class="row between foot" id="tblfoot">
-        <span class="mut small">RPJ = CA ÷ jours loués, pondéré</span>
+        <span class="mut small" id="tblnote">RPJ = CA ÷ jours loués, pondéré</span>
         <span class="row"><span class="mut small" id="live" aria-live="polite"></span><button class="btn sm" id="copy" title="Copier le tableau (Excel / Sheets)">Copier</button></span>
       </div>
     </section>
