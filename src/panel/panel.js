@@ -8,12 +8,20 @@
   const $$ = s => [...document.querySelectorAll(s)];
   const app = $('#app');
   const WEYIELD = 'https://apps.weyield.io/';
+  // Sites suivis : graphiques Réservations de WeYield, Balance de flotte de Rentway (même moteur, adaptateurs différents).
+  const SITES = [{ url: WEYIELD, name: 'WeYield' }, { url: 'https://rentwayv1.emotionmobility.com/', name: 'Rentway' }];
+  const siteOf = url => (url ? SITES.find(x => url.startsWith(x.url)) || null : null);
+  let site = null;
   const FORCED_TAB = new URLSearchParams(location.search).get('tab'); // banc de test : cible un onglet précis
 
   // ---------- préférences propres au panneau ----------
   const PREF_KEY = 'wypPanel';
   const prefs = Object.assign({ tab: 'zones', settings: false, source: 'jev', cum: false },(() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)); } catch (e) { return null; } })());
   const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) {} };
+  // Onglets propres à chaque source : Signaux (prix, WeYield) ou Catégories (occupation, Rentway). La préférence est gardée telle quelle.
+  const TABS = { rpd: ['zones', 'periods', 'signals'], fleet: ['zones', 'periods', 'cats'] };
+  const isFleet = () => !!view && view.source === 'fleet';
+  const curTab = () => (TABS[isFleet() ? 'fleet' : 'rpd'].includes(prefs.tab) ? prefs.tab : 'zones');
 
   // ---------- formats ----------
   const nf = (v, d) => v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -36,24 +44,28 @@
   let port = null, tabId = null, st = null, view = null, conn = 'wait', gotSnap = false, lastHover = '', lastSig = '';
   const send = m => { if (port) { try { port.postMessage(m); } catch (e) {} } };
 
+  const siteName = () => (site ? site.name : 'WeYield');
+  const isRentway = () => !!site && site.name === 'Rentway';
   const EMPTY = {
-    wait: ['Connexion…', 'Recherche de la page WeYield.', null],
-    notab: ['Ouvrez WeYield', 'Le panneau suit l’onglet actif. Ouvrez apps.weyield.io, page Réservations.', ['Ouvrir WeYield', () => chrome.tabs.create({ url: WEYIELD })]],
-    noscript: ['Page non connectée', 'Rechargez l’onglet WeYield : l’extension vient d’être installée ou mise à jour.', ['Recharger l’onglet', () => chrome.tabs.reload(tabId)]],
-    lost: ['Connexion perdue', 'La page WeYield a été rechargée. Reconnexion automatique…', ['Recharger l’onglet', () => chrome.tabs.reload(tabId)]],
-    nochart: ['Aucun graphique Réservations', 'Ouvrez la page Réservations de WeYield et cliquez sur « Appliquer ».', null],
+    wait: () => ['Connexion…', `Recherche de la page ${siteName()}.`, null],
+    notab: () => ['Ouvrez WeYield ou Rentway', 'Le panneau suit l’onglet actif : apps.weyield.io (page Réservations) ou Rentway (Balance de flotte).', ['Ouvrir WeYield', () => chrome.tabs.create({ url: WEYIELD })]],
+    noscript: () => ['Page non connectée', `Rechargez l’onglet ${siteName()} : l’extension vient d’être installée ou mise à jour.`, ['Recharger l’onglet', () => chrome.tabs.reload(tabId)]],
+    lost: () => ['Connexion perdue', `La page ${siteName()} a été rechargée. Reconnexion automatique…`, ['Recharger l’onglet', () => chrome.tabs.reload(tabId)]],
+    nochart: () => (isRentway()
+      ? ['Aucune balance de flotte', 'Ouvrez la Balance de flotte dans Rentway et lancez la recherche : périodes et paliers se posent sur le tableau.', null]
+      : ['Aucun graphique Réservations', 'Ouvrez la page Réservations de WeYield et cliquez sur « Appliquer ».', null]),
   };
-  const STATUS = { wait: 'Connexion…', ok: 'Connecté', nochart: 'Pas de graphique', lost: 'Connexion perdue', noscript: 'Non connecté', notab: 'Hors WeYield' };
+  const STATUS = { wait: 'Connexion…', ok: 'Connecté', nochart: 'Pas de graphique', lost: 'Connexion perdue', noscript: 'Non connecté', notab: 'Hors WeYield / Rentway' };
   let emptyAction = null;
   function setConn(c) {
     conn = c;
     app.dataset.conn = c;
-    $('#statusTxt').textContent = STATUS[c];
+    $('#statusTxt').textContent = c === 'nochart' && isRentway() ? 'Pas de tableau' : STATUS[c];
     const ok = c === 'ok';
     $('#content').hidden = !ok;
     $('#empty').hidden = ok;
     if (!ok) {
-      const [t, p, btn] = EMPTY[c];
+      const [t, p, btn] = EMPTY[c]();
       $('#emptyTitle').textContent = t; $('#emptyText').textContent = p;
       const b = $('#emptyBtn'); b.hidden = !btn; if (btn) { b.textContent = btn[0]; emptyAction = btn[1]; }
     }
@@ -61,15 +73,16 @@
   $('#emptyBtn').addEventListener('click', () => emptyAction && emptyAction());
 
   async function pickTab() {
-    if (FORCED_TAB) return +FORCED_TAB;
+    if (FORCED_TAB) { try { const t = await chrome.tabs.get(+FORCED_TAB); site = siteOf(t && t.url); } catch (e) { site = null; } return +FORCED_TAB; }
     const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
-    return t && t.url && t.url.startsWith(WEYIELD) ? t.id : null;
+    site = siteOf(t && t.url);
+    return site ? t.id : null;
   }
   function disconnect() { const p = port; port = null; if (p) { try { p.disconnect(); } catch (e) {} } }
   async function sync() {
     const id = await pickTab();
     if (id === tabId && port) return;
-    disconnect(); tabId = id; gotSnap = false; view = null; lastSig = '';
+    disconnect(); tabId = id; gotSnap = false; view = null; lastSig = ''; pushedShared = false; localEdit = false;
     if (id == null) return setConn('notab');
     setConn('wait');
     let p;
@@ -83,6 +96,7 @@
     if (m && m.type === 'diag') return navigator.clipboard.writeText(JSON.stringify(m.data, null, 1)).then(() => flash('Diagnostic copié ✓'), () => flash('Copie impossible'));
     if (!m || m.type !== 'snapshot') return;
     gotSnap = true; st = m.state; view = m.view;
+    syncShared();
     if (!view) { setConn('nochart'); return; }
     if (conn !== 'ok') setConn('ok');
     render();
@@ -98,11 +112,36 @@
   let jevKey = '', jevModel = 'jev-latest', journal = [];
   let jev = {};              // k → { fk, res } : résultats Jev en mémoire ; périmés dès que les écarts d'une période changent
   let analyzing = null, astat = '', fixing = null;
+  // ---------- réglages communs aux deux sites : découpage en périodes et paliers ----------
+  // Chaque site garde son état dans sa page (localStorage de son domaine). Le panneau recopie la grille de périodes et les paliers
+  // du dernier site réglé vers l'autre, une fois par connexion. Amorcé par WeYield ou par un réglage fait ici, jamais par les valeurs
+  // par défaut d'une page Rentway encore vierge (elles écraseraient les réglages WeYield).
+  // Sur un même site (un seul localStorage), c'est l'état de la page qui fait foi : la recopie ne joue qu'entre WeYield et Rentway.
+  const SHARED = ['gridDate', 'gridNum', 'gridLen', 'gridUnit', 'tierList'];
+  const pickShared = s => { const o = {}; SHARED.forEach(k => { o[k] = s[k]; }); return JSON.parse(JSON.stringify(o)); };
+  let shared = null, pushedShared = false, localEdit = false;   // shared : { from: 'rpd' | 'fleet', cfg }
+  const sharedReady = store.get('wypShared').then(o => { const x = o.wypShared; shared = x && x.cfg && x.from ? x : null; });
+  const saveShared = (from, cfg) => { shared = { from, cfg }; store.set({ wypShared: shared }); };
+  function syncShared() {
+    const src = view && view.source;
+    if (!st || !src) return;   // sans graphique ni tableau, on ne sait pas encore sur quel site on est
+    sharedReady.then(() => {
+      const mine = pickShared(st), same = !!shared && JSON.stringify(mine) === JSON.stringify(shared.cfg);
+      if (localEdit) { localEdit = false; return saveShared(src, mine); }   // réglé dans ce panneau : la page fait foi (valeurs nettoyées par le moteur)
+      if (!shared) { if (src === 'rpd') saveShared(src, mine); return; }
+      if (shared.from === src) { if (!same) saveShared(src, mine); return; }
+      if (pushedShared || same) return;
+      pushedShared = true;   // une seule recopie par connexion : jamais de boucle
+      send({ op: 'config', patch: shared.cfg });
+    });
+  }
+
   store.get(['wypJevKey', 'wypJevModel', 'wypJournal']).then(o => { jevKey = o.wypJevKey || ''; jevModel = o.wypJevModel || 'jev-latest'; journal = o.wypJournal || []; syncJev(); if (view) render(); });
 
   // ---------- rendu ----------
   function render() {
-    const v = view;
+    const v = view, F = isFleet(), tab = curTab();
+    app.dataset.source = F ? 'fleet' : 'rpd';
     $('#pkn').textContent = pLabel(v.selP);
     $('#pkd').textContent = rng(v.selP.from, v.selP.to);
     $('#today').hidden = v.isAuto;
@@ -115,7 +154,7 @@
     $('#offReset').hidden = !v.offset;
 
     const s = v.selStats, h = v.has;
-    $('#hero').innerHTML = `
+    $('#hero').innerHTML = F ? heroFleet(v) : `
       <div><div class="lbl">RPJ N · ${pLabel(v.selP)}, départs</div>
         <div class="big">${h.rpd ? rpj(s.cur && s.cur.rpd) : '–'}</div>
         <div class="mut small">CA ${h.rpd ? ca(s.cur && s.cur.rev) : '–'}</div></div>
@@ -124,21 +163,38 @@
         <div class="cmpr">${h.lyf ? pill(s.dLyf) : '<span class="pill na">–</span>'}<span class="mut">vs final <b>${h.lyf ? rpj(s.lyf && s.lyf.rpd) : '–'}</b></span></div>
       </div>`;
 
-    $$('.seg [data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === prefs.tab)));
+    $$('.seg [data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     $('#tabZones').textContent = 'Paliers';
-    const sigTab = prefs.tab === 'signals', cum = cumOn();
+    const sigTab = tab === 'signals', catTab = tab === 'cats', cum = cumOn();
     $('#tbl').hidden = sigTab; $('#tblfoot').hidden = sigTab; $('#sig').hidden = !sigTab;
-    $('#cumbar').hidden = prefs.tab !== 'zones';
-    $$('[data-cum]').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.cum === '1') === !!prefs.cum)));
-    $('#tblnote').textContent = cum ? 'Cumulé depuis le 1er palier, pondéré' : 'RPJ = CA ÷ jours loués, pondéré';
+    $('#tbl').classList.toggle('hm', catTab);
+    $('#cumbar').hidden = !(tab === 'zones' || catTab);
+    $('#cumlbl').textContent = F ? (catTab ? 'Pic d’occupation par palier' : 'Occupation de chaque palier') : 'RPJ de chaque palier';
+    $$('[data-cum]').forEach(b => {
+      b.setAttribute('aria-pressed', String((b.dataset.cum === '1') === !!prefs.cum));
+      b.title = b.dataset.cum === '1' ? (F ? 'Du premier palier jusqu’à celui-ci inclus : le goulot d’une location de cette durée' : 'RPJ du premier palier jusqu’à celui-ci inclus')
+        : (F ? 'Les seuls jours du palier' : 'RPJ des seuls jours du palier');
+    });
+    $('#tblnote').textContent = F ? (cum ? 'Cumulé : du 1er palier à la fin de celui-ci' : catTab ? 'Pic = jour le plus chargé de la zone, en %' : 'Occupation = 1 − dispo ÷ flotte, jours additionnés')
+      : (cum ? 'Cumulé depuis le 1er palier, pondéré' : 'RPJ = CA ÷ jours loués, pondéré');
     renderMsgs();
-    if (sigTab) renderSignals(); else renderTable();
+    if (sigTab) renderSignals(); else if (catTab) renderCats(); else renderTable();
     syncSettings();
     sendSignals();
   }
 
   function renderMsgs() {
     const v = view, h = v.has;
+    if (isFleet()) {
+      const f = v.fleet || {}, notes = [];
+      if (!f.n) notes.push('<div class="note warn">Tableau Rentway vide : relancez la recherche de la Balance de flotte.</div>');
+      else if (!v.selStats.nDays) notes.push(`<div class="note">${pLabel(v.selP)} est hors des dates chargées dans Rentway (${rng(f.from, f.to)}). Changez de période ou élargissez les dates de la recherche.</div>`);
+      if (f.locs > 1) notes.push(`<div class="note">${f.locs} stations dans le tableau : leurs chiffres sont additionnés.</div>`);
+      if (f.catField && f.catField !== 'groupID') notes.push(`<div class="note">Lignes lues : « ${esc(f.catField)} » (affichage non encore vérifié sur le vrai Rentway).</div>`);
+      if (f.bad) notes.push(`<div class="note warn">${f.bad} ligne${f.bad > 1 ? 's' : ''} Rentway illisible${f.bad > 1 ? 's' : ''}, ignorée${f.bad > 1 ? 's' : ''}. <button class="link" data-diag>Copier le diagnostic</button></div>`);
+      $('#msgs').innerHTML = notes.join('');
+      return;
+    }
     const missing = [!h.ly && 'N-1', !h.lyf && 'N-1 final'].filter(Boolean);
     const notes = [];
     if (v.metricBlocked) notes.push(`<div class="note warn">Affichage « ${esc(v.metric || '')} » : le RPJ n’est pas calculé. Repassez le menu « Avancé » sur « Revenu par jour ».</div>`);
@@ -156,25 +212,76 @@
     return `<td>${h.rpd && r.cur ? `<b>${rpj(r.cur.rpd)}</b><small>${ca(r.cur.rev)}</small>` : '–'}</td>${cmp(r.ly, r.dLy, !h.ly)}${cmp(r.lyf, r.dLyf, !h.lyf)}`;
   }
   // Vue cumulée des paliers (onglet Paliers seulement) : chaque ligne = du premier palier jusqu'à elle, calculé par le moteur.
-  const cumOn = () => prefs.tab === 'zones' && !!prefs.cum && !!(view && view.cumZones);
+  const cumOn = () => ['zones', 'cats'].includes(curTab()) && !!prefs.cum && !!(view && view.cumZones);
   const shownZones = () => (cumOn() ? view.cumZones : view.zones);
   function renderTable() {
-    const v = view, h = v.has;
+    const v = view, h = v.has, F = isFleet(), cellsOf = F ? fleetCells : cells;
     const partial = r => (r.nDays < r.full ? `<small>⚠ ${r.nDays}/${r.full} j chargés</small>` : '');
     let body;
-    if (prefs.tab === 'periods') {
+    if (curTab() === 'periods') {
       body = v.periodRows.length ? v.periodRows.map(r => `<tr data-k="${r.p.k}" tabindex="0" class="${r.p.k === v.selP.k ? 'sel' : ''}" title="Choisir ${pLabel(r.p)}">
-        <td><span class="zl">${pLabel(r.p)}</span><small>${rng(r.from, r.to)}</small>${partial(r)}</td>${cells(r)}</tr>`).join('')
-        : '<tr><td colspan="4" class="mut">Aucune période dans la plage du graphique.</td></tr>';
+        <td><span class="zl">${pLabel(r.p)}</span><small>${rng(r.from, r.to)}</small>${partial(r)}</td>${cellsOf(r)}</tr>`).join('')
+        : `<tr><td colspan="4" class="mut">Aucune période dans la plage ${F ? 'du tableau' : 'du graphique'}.</td></tr>`;
     } else {
-      const head = `<tr class="head"><td><span class="zl">${pLabel(v.selP)} · départs</span><small>${rng(v.selStats.from, v.selStats.to)}</small>${partial(v.selStats)}</td>${cells(v.selStats)}</tr>`;
+      const head = `<tr class="head"><td><span class="zl">${pLabel(v.selP)} · ${F ? 'période' : 'départs'}</span><small>${rng(v.selStats.from, v.selStats.to)}</small>${partial(v.selStats)}</td>${cellsOf(v.selStats)}</tr>`;
       const zs = shownZones();
-      body = head + (zs.length ? zs.map((z, i) => `<tr data-z="${i}" tabindex="0"><td><i style="background:rgb(${PALETTE[z.ci % PALETTE.length]})"></i><span class="zl">${z.label}</span><small>${rng(z.from, z.to)}</small>${partial(z)}</td>${cells(z)}</tr>`).join('')
+      body = head + (zs.length ? zs.map((z, i) => `<tr data-z="${i}" tabindex="0"><td><i style="background:rgb(${PALETTE[z.ci % PALETTE.length]})"></i><span class="zl">${z.label}</span><small>${rng(z.from, z.to)}</small>${partial(z)}</td>${cellsOf(z)}</tr>`).join('')
         : '<tr><td colspan="4" class="mut">Aucun palier : ajoutez-en dans les réglages.</td></tr>');
     }
-    $('#tbl').innerHTML = `<table><thead><tr><th></th><th>RPJ N</th>
+    const thead = F ? `<tr><th></th><th title="Occupation moyenne (1 − dispo ÷ flotte, jours additionnés) et jour le plus chargé">Occup.</th>
+      <th title="Disponibilité la plus basse sur la zone (véhicules, toutes catégories) et son jour">Dispo min</th>
+      <th title="Catégories dont le jour le plus chargé atteint le seuil « limite » (ou en surbooking)">Tension</th></tr>`
+      : `<tr><th></th><th>RPJ N</th>
       <th class="${h.ly ? '' : 'off'}" title="N-1 à la même date">N-1</th>
-      <th class="${h.lyf ? '' : 'off'}" title="N-1 final (réalisé)">N-1 final</th></tr></thead><tbody>${body}</tbody></table>`;
+      <th class="${h.lyf ? '' : 'off'}" title="N-1 final (réalisé)">N-1 final</th></tr>`;
+    $('#tbl').innerHTML = `<table><thead>${thead}</thead><tbody>${body}</tbody></table>`;
+  }
+
+  // ---------- balance de flotte (Rentway) : occupation, dispo minimale, catégories en tension ----------
+  const occ = x => (x == null ? '–' : nf(x * 100, 0) + ' %');
+  const TH = () => (st && Array.isArray(st.occTh) && st.occTh.length === 3 ? st.occTh : WY.OCC_TH);
+  const lvOf = x => (x ? WY.occLevel(x.peak, TH(), x.overDays) : -1);
+  const catTitle = x => (x ? `${x.cat} : pic ${occ(x.peak)}${x.peakDay != null ? ` le ${fmtDM(x.peakDay)}` : ''}, moy. ${occ(x.occ)}, dispo min ${x.minAvail}${x.minDay != null ? ` le ${fmtDM(x.minDay)}` : ''}${x.overDays ? `, ${x.overDays} j en surbooking` : ''}` : '');
+  function heroFleet(v) {
+    const s = v.selStats, a = s.all, t = s.tense || [], catOf = c => s.cats.find(x => x.cat === c), l = lvOf(a);
+    return `<div><div class="lbl">Occupation · ${pLabel(v.selP)}</div>
+        <div class="big">${a ? occ(a.occ) : '–'}</div>
+        <div class="mut small">${a ? `pic ${occ(a.peak)}${a.peakDay != null ? ` le ${fmtDM(a.peakDay)}` : ''} · dispo min ${a.minAvail}` : 'Hors des dates du tableau'}</div></div>
+      <div class="cmp">${l < 0 ? '<span class="pill na">–</span>' : `<span class="lv lv${l}" title="Niveau du jour le plus chargé, toutes catégories">${WY.OCC_LEVELS[l]}</span>`}
+        <div class="mut small">${a ? (t.length ? `${t.length} catégorie${t.length > 1 ? 's' : ''} en tension` : 'Aucune catégorie en tension') : ''}</div>
+        ${t.length ? `<div class="tense">${t.slice(0, 8).map(c => `<span class="cat lv${lvOf(catOf(c))}" title="${esc(catTitle(catOf(c)))}">${esc(c)}</span>`).join('')}${t.length > 8 ? `<span class="mut small">+${t.length - 8}</span>` : ''}</div>` : ''}</div>`;
+  }
+  // Couleur sur le pic (le jour le plus chargé décide de ce qu'on peut encore vendre), jamais seule : le niveau est dans l'info-bulle.
+  function fleetCells(r) {
+    const a = r.all;
+    if (!a) return '<td>–</td><td>–</td><td>–</td>';
+    const t = r.tense || [], l = lvOf(a);
+    return `<td><b>${occ(a.occ)}</b><small><span class="lvt lv${l}" title="${l >= 0 ? WY.OCC_LEVELS[l] : ''}">pic ${occ(a.peak)}</span></small></td>
+      <td><b>${a.minAvail}</b><small>${a.minDay != null ? fmtDM(a.minDay) : ''}</small></td>
+      <td class="tn">${t.length ? `<b>${t.length}</b><small title="${esc(t.join(', '))}">${esc(t.slice(0, 3).join(' '))}${t.length > 3 ? ' …' : ''}</small>` : '<span class="mut">0</span>'}</td>`;
+  }
+  // Matrice catégories × (période, paliers) : pic d'occupation en %, ou la dispo minimale (négative) en cas de surbooking.
+  function catCols() {
+    const v = view, cum = cumOn();
+    return [Object.assign({}, v.selStats, { label: pLabel(v.selP), per: true })].concat((cum ? v.cumZones : v.zones).map(z => Object.assign({}, z, { label: z.label + (cum ? ' cumulé' : '') })));
+  }
+  function renderCats() {
+    const v = view, cols = catCols(), T = TH();
+    const cell = (x, z, zi) => {
+      const attr = z.per ? `data-p="${v.selP.k}"` : `data-z="${zi - 1}"`;
+      if (!z.nDays) return `<td class="na" ${attr} title="${esc(`${z.label} : hors des dates du tableau`)}">·</td>`;
+      const l = lvOf(x);
+      if (l < 0) return `<td class="na" ${attr} title="${esc(`${x ? x.cat : ''} : pas de flotte`)}">·</td>`;
+      return `<td class="lv${l}" ${attr} title="${esc(`${z.label} (${rng(z.from, z.to)}) · ${catTitle(x)} · ${WY.OCC_LEVELS[l]}`)}">${x.overDays ? x.minAvail : nf(x.peak * 100, 0)}</td>`;
+    };
+    const head = `<tr><th>Cat.</th>${cols.map(z => `<th title="${esc(`${z.label} : ${rng(z.from, z.to)}`)}"${z.per ? '' : ` style="color:rgb(${PALETTE[z.ci % PALETTE.length]})"`}>${z.per ? 'Pér.' : esc(String(z.a) + '-' + z.b)}</th>`).join('')}</tr>`;
+    const rows = v.selStats.cats.map((c, ci) => {
+      const fleet = Math.max(0, ...cols.map(z => (z.cats[ci] && z.cats[ci].fleet) || 0));
+      return `<tr><td>${esc(c.cat)}<small>${fleet ? `${fleet} véh.` : 'sans flotte'}</small></td>${cols.map((z, zi) => cell(z.cats[ci], z, zi)).join('')}</tr>`;
+    }).join('');
+    const bands = [`< ${T[0]} %`, `${T[0]}–${T[1]} %`, `${T[1]}–${T[2]} %`, `≥ ${T[2]} %`, 'dispo < 0'];
+    $('#tbl').innerHTML = `<table><thead>${head}</thead><tbody>${rows || `<tr><td colspan="${cols.length + 1}" class="mut">Aucune catégorie.</td></tr>`}</tbody></table>
+      <div class="legend" style="padding:8px 10px">${bands.map((b, i) => `<span class="lv lv${i}">${WY.OCC_LEVELS[i]} ${b}</span>`).join('')}</div>`;
   }
 
   // ---------- signaux prix × rythme ----------
@@ -317,7 +424,7 @@
   // survol d'une ligne → la zone ressort sur le graphique
   // en vue cumulée, le palier survolé ressort avec tous les plus courts (les jours réellement additionnés)
   const hover = (zone, period) => { const cum = zone != null && cumOn(), k = `${zone}|${period}|${cum}`; if (k === lastHover) return; lastHover = k; send({ op: 'hover', zone, period, cum }); };
-  const hoverRow = e => { const r = e.target.closest ? e.target.closest('tr[data-z], tr[data-k], .sigc') : null; if (!r) return; r.dataset.z != null ? hover(+r.dataset.z, null) : hover(null, +r.dataset.k); };
+  const hoverRow = e => { const r = e.target.closest ? e.target.closest('td[data-z], td[data-p], tr[data-z], tr[data-k], .sigc') : null; if (!r) return; r.dataset.z != null ? hover(+r.dataset.z, null) : hover(null, +(r.dataset.k != null ? r.dataset.k : r.dataset.p)); };
   ['#tbl', '#sig'].forEach(sel => { const el = $(sel); el.addEventListener('mouseover', hoverRow); el.addEventListener('focusin', hoverRow); el.addEventListener('mouseleave', () => hover(null, null)); el.addEventListener('focusout', () => hover(null, null)); });
 
   // copie
@@ -325,17 +432,23 @@
   const flash = msg => { $('#live').textContent = msg; clearTimeout(liveTimer); liveTimer = setTimeout(() => { $('#live').textContent = ''; }, 1800); };
   $('#copy').addEventListener('click', () => {
     if (!view) return;
-    const rows = prefs.tab === 'periods'
-      ? view.periodRows.map(r => Object.assign({ label: r.p.label }, r))
-      : [Object.assign({ label: `${view.selP.label} départs` }, view.selStats), ...shownZones().map(z => Object.assign({}, z, { label: `${view.selP.label} ${z.label}${cumOn() ? ' cumulé' : ''}` }))];
-    navigator.clipboard.writeText(WY.toTSV(rows)).then(() => flash('Copié ✓'), () => flash('Copie impossible'));
+    const F = isFleet(), tab = curTab();
+    let text;
+    if (tab === 'cats') text = WY.fleetCatsTSV(catCols().map(z => Object.assign({}, z, { label: z.per ? z.label : `${view.selP.label} ${z.label}` })));
+    else {
+      const rows = tab === 'periods'
+        ? view.periodRows.map(r => Object.assign({ label: r.p.label }, r))
+        : [Object.assign({ label: `${view.selP.label} ${F ? 'période' : 'départs'}` }, view.selStats), ...shownZones().map(z => Object.assign({}, z, { label: `${view.selP.label} ${z.label}${cumOn() ? ' cumulé' : ''}` }))];
+      text = F ? WY.fleetTSV(rows) : WY.toTSV(rows);
+    }
+    navigator.clipboard.writeText(text).then(() => flash('Copié ✓'), () => flash('Copie impossible'));
   });
 
   // ---------- réglages ----------
   const settings = $('#settings');
   settings.open = !!prefs.settings;
   settings.addEventListener('toggle', () => { prefs.settings = settings.open; savePrefs(); });
-  const cfg = patch => send({ op: 'config', patch });
+  const cfg = patch => { if (SHARED.some(k => k in patch)) localEdit = true; send({ op: 'config', patch }); };
   const intIn = (el, lo, hi) => Math.min(hi, Math.max(lo, Math.round(+el.value || lo)));
   $('#gnum').addEventListener('change', () => cfg({ gridNum: intIn($('#gnum'), 1, 999), gridDate: $('#gdate').value || (st && st.gridDate) || '' }));
   $('#gdate').addEventListener('change', () => cfg({ gridDate: $('#gdate').value, gridNum: intIn($('#gnum'), 1, 999) }));
@@ -361,10 +474,20 @@
   });
   $('#treset').addEventListener('click', () => { cfg({ tierList: WY.parseTiers(WY.DEFAULT_TIERS).tiers }); tierSig = ''; });
 
+  // Seuils d'occupation (Rentway) : confortable ≤ limite ≤ pic.
+  const TH_IDS = ['#th0', '#th1', '#th2'], TH_HINT = $('#thhint').textContent;
+  $('#occset').addEventListener('change', () => {
+    const v = TH_IDS.map(id => Math.round(+$(id).value));
+    if (v.every(x => x >= 1 && x <= 150) && v[0] <= v[1] && v[1] <= v[2]) { $('#thhint').textContent = TH_HINT; cfg({ occTh: v }); }
+    else $('#thhint').textContent = 'Seuils incohérents : il faut confortable ≤ limite ≤ pic (entre 1 et 150 %).';
+  });
+  $('#threset').addEventListener('click', () => { $('#thhint').textContent = TH_HINT; cfg({ occTh: WY.OCC_TH.slice() }); });
+
   let tierSig = '';
   function syncSettings() {
     if (!settings.contains(document.activeElement)) {
       $('#gnum').value = st.gridNum; $('#gdate').value = st.gridDate; $('#glen').value = st.gridLen;
+      TH().forEach((x, i) => { $(TH_IDS[i]).value = x; });
     }
     $$('[data-unit]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.unit === st.gridUnit)));
     const ch = view.charts;

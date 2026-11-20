@@ -288,4 +288,7 @@
   }
 
   Object.assign(WY, { findCharts, titleOf, pickData, roleScore, chartKey, describe, autoRoles, resolveRoles, windowDays, metricLabel, rpdTrusted, diagnose, readSeries, chartRefDay, dataSignature, hasOverlay, clearOverlay, paint, bindPick });
+  // Adaptateur lu par le moteur (engine.js) ; la balance de flotte Rentway expose la même interface (pivot.js).
+  WY.src = { kind: 'rpd', findCharts, pickData, roleScore, chartKey, readSeries, chartRefDay, dataSignature, hasOverlay, clearOverlay, paint, bindPick, diagnose,
+    zoneStats: WY.zoneStats, cumZones: WY.cumZones };
 })(typeof window !== 'undefined' ? window : globalThis);

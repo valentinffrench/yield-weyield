@@ -3,7 +3,8 @@
   "name": "weyield-extension-bench",
   "scripts": {
     "test": "node run.js",
-    "screenshots": "node screenshots.js"
+    "screenshots": "node screenshots.js",
+    "test:rentway": "node rentway.js"
   },
   "devDependencies": {
     "highcharts": "^13.1.1",
