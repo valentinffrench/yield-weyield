@@ -82,7 +82,7 @@
   async function sync() {
     const id = await pickTab();
     if (id === tabId && port) return;
-    disconnect(); tabId = id; gotSnap = false; view = null; lastSig = ''; pushedShared = false; localEdit = false;
+    disconnect(); tabId = id; gotSnap = false; view = null; lastSig = '';
     if (id == null) return setConn('notab');
     setConn('wait');
     let p;
@@ -96,7 +96,6 @@
     if (m && m.type === 'diag') return navigator.clipboard.writeText(JSON.stringify(m.data, null, 1)).then(() => flash('Diagnostic copié ✓'), () => flash('Copie impossible'));
     if (!m || m.type !== 'snapshot') return;
     gotSnap = true; st = m.state; view = m.view;
-    syncShared();
     if (!view) { setConn('nochart'); return; }
     if (conn !== 'ok') setConn('ok');
     render();
@@ -112,29 +111,13 @@
   let jevKey = '', jevModel = 'jev-latest', journal = [];
   let jev = {};              // k → { fk, res } : résultats Jev en mémoire ; périmés dès que les écarts d'une période changent
   let analyzing = null, astat = '', fixing = null;
-  // ---------- réglages communs aux deux sites : découpage en périodes et paliers ----------
-  // Chaque site garde son état dans sa page (localStorage de son domaine). Le panneau recopie la grille de périodes et les paliers
-  // du dernier site réglé vers l'autre, une fois par connexion. Amorcé par WeYield ou par un réglage fait ici, jamais par les valeurs
-  // par défaut d'une page Rentway encore vierge (elles écraseraient les réglages WeYield).
-  // Sur un même site (un seul localStorage), c'est l'état de la page qui fait foi : la recopie ne joue qu'entre WeYield et Rentway.
-  const SHARED = ['gridDate', 'gridNum', 'gridLen', 'gridUnit', 'tierList'];
-  const pickShared = s => { const o = {}; SHARED.forEach(k => { o[k] = s[k]; }); return JSON.parse(JSON.stringify(o)); };
-  let shared = null, pushedShared = false, localEdit = false;   // shared : { from: 'rpd' | 'fleet', cfg }
-  const sharedReady = store.get('wypShared').then(o => { const x = o.wypShared; shared = x && x.cfg && x.from ? x : null; });
-  const saveShared = (from, cfg) => { shared = { from, cfg }; store.set({ wypShared: shared }); };
-  function syncShared() {
-    const src = view && view.source;
-    if (!st || !src) return;   // sans graphique ni tableau, on ne sait pas encore sur quel site on est
-    sharedReady.then(() => {
-      const mine = pickShared(st), same = !!shared && JSON.stringify(mine) === JSON.stringify(shared.cfg);
-      if (localEdit) { localEdit = false; return saveShared(src, mine); }   // réglé dans ce panneau : la page fait foi (valeurs nettoyées par le moteur)
-      if (!shared) { if (src === 'rpd') saveShared(src, mine); return; }
-      if (shared.from === src) { if (!same) saveShared(src, mine); return; }
-      if (pushedShared || same) return;
-      pushedShared = true;   // une seule recopie par connexion : jamais de boucle
-      send({ op: 'config', patch: shared.cfg });
-    });
-  }
+  // ---------- réglages communs aux deux sites ----------
+  // Périodes et paliers sont enregistrés une seule fois dans l'extension (clé « wypShared ») et appliqués aux deux sites par le relais
+  // de chaque onglet (relay.js). Le panneau ne gère ici que l'option « même période sur les deux sites ».
+  let shared = WY.cleanShared({});
+  const showShared = () => { const b = $('#syncsel'); if (b) b.checked = !!shared.sync; };
+  store.get('wypShared').then(o => { shared = WY.cleanShared(o.wypShared); showShared(); });
+  chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch.wypShared) { shared = WY.cleanShared(ch.wypShared.newValue); showShared(); } });
 
   store.get(['wypJevKey', 'wypJevModel', 'wypJournal']).then(o => { jevKey = o.wypJevKey || ''; jevModel = o.wypJevModel || 'jev-latest'; journal = o.wypJournal || []; syncJev(); if (view) render(); });
 
@@ -448,7 +431,19 @@
   const settings = $('#settings');
   settings.open = !!prefs.settings;
   settings.addEventListener('toggle', () => { prefs.settings = settings.open; savePrefs(); });
-  const cfg = patch => { if (SHARED.some(k => k in patch)) localEdit = true; send({ op: 'config', patch }); };
+  const cfg = patch => send({ op: 'config', patch });
+  // Même période sur les deux sites : en l'activant, l'autre site rejoint la période (et le J0) affichée ici.
+  $('#syncsel').addEventListener('change', async e => {
+    const cur = WY.cleanShared((await store.get('wypShared')).wypShared);
+    cur.sync = e.target.checked;
+    if (cur.sync && view) { cur.sel = { from: view.isAuto ? null : view.selP.from, offset: view.offset }; cur.selT = Date.now(); }
+    if (!cur.cfg && st) { cur.cfg = WY.pickShared(st); cur.from = view ? view.source : null; }
+    await store.set({ wypShared: cur });
+    flashSync(cur.sync ? 'Période synchronisée entre WeYield et Rentway.' : 'Chaque site garde sa propre période.');
+  });
+  let syncTimer = 0;
+  const SYNC_HINT = $('#synchint').textContent;
+  const flashSync = t => { $('#synchint').textContent = t; clearTimeout(syncTimer); syncTimer = setTimeout(() => { $('#synchint').textContent = SYNC_HINT; }, 2500); };
   const intIn = (el, lo, hi) => Math.min(hi, Math.max(lo, Math.round(+el.value || lo)));
   $('#gnum').addEventListener('change', () => cfg({ gridNum: intIn($('#gnum'), 1, 999), gridDate: $('#gdate').value || (st && st.gridDate) || '' }));
   $('#gdate').addEventListener('change', () => cfg({ gridDate: $('#gdate').value, gridNum: intIn($('#gnum'), 1, 999) }));

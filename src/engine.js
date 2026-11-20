@@ -30,26 +30,12 @@
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
   save();   // persiste d'emblée la mise à niveau (rolesSchema) : un état ancien n'est pas remis à zéro à chaque chargement
 
-  // Seules ces clés, avec ces bornes, peuvent être modifiées depuis le panneau.
-  const int = (v, lo, hi, dflt) => { v = Math.round(+v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt; };
-  function sanitize(p) {
-    const o = {};
-    if (typeof p.periods === 'boolean') o.periods = p.periods;
-    if (typeof p.tiers === 'boolean') o.tiers = p.tiers;
-    if (typeof p.signals === 'boolean') o.signals = p.signals;
-    if (Array.isArray(p.tierList)) o.tierList = p.tierList.slice(0, 12).map(t => [int(t && t[0], 0, 366, 0), int(t && t[1], 0, 366, 0)]).filter(([a, b]) => b >= a && b >= 1);
-    if (typeof p.gridDate === 'string' && (p.gridDate === '' || !isNaN(WY.parseISO(p.gridDate)))) o.gridDate = p.gridDate;
-    if ('gridNum' in p) o.gridNum = int(p.gridNum, 1, 999, 1);
-    if ('gridLen' in p) o.gridLen = int(p.gridLen, 1, 366, 1);
-    if (p.gridUnit === 'd' || p.gridUnit === 'w') o.gridUnit = p.gridUnit;
-    if ('offset' in p) o.offset = int(p.offset, -60, 60, 0);
-    if ('dataIdx' in p) o.dataIdx = p.dataIdx === null ? null : int(p.dataIdx, 0, 9, 0);
-    // Seuils d'occupation (balance de flotte) : confortable ≤ limite ≤ pic, en %.
-    if (Array.isArray(p.occTh) && p.occTh.length === 3) { const v = p.occTh.map(x => int(x, 1, 150, NaN)); if (v.every(Number.isFinite) && v[0] <= v[1] && v[1] <= v[2]) o.occTh = v; }
-    return o;
-  }
+  // Seules ces clés, avec ces bornes, peuvent être modifiées depuis le panneau (liste blanche dans core.js).
+  const int = WY.clampInt, sanitize = WY.sanitizePatch;
 
-  let sel = null;              // période choisie (index k) ; null = période contenant la date de référence
+  // Période choisie, repérée par son jour de début (et non par son numéro) : elle reste juste d'un site à l'autre même si la
+  // « période en cours » n'y est pas calculée pareil (WeYield : date de référence ; Rentway : aujourd'hui). null = période en cours.
+  let selDay = null;
   let hot = {};                // élément survolé dans le panneau : { zone, period }
   let model = null, view = null, plan = null;
   let signalItems = [];        // verdicts par période envoyés par le panneau : [{ k, kind, alpha }]
@@ -64,14 +50,14 @@
     const stats = (from, to) => SRC.zoneStats(S, from, to, state);
     const grid = WY.makeGrid(state, ref);
     const periods = grid.inRange(S.range[0], S.range[1]);
-    const k = sel != null ? sel : grid.indexAt(ref);
+    const k = grid.indexAt(selDay != null ? selDay : ref);
     const selP = grid.at(k);
     const j0 = WY.j0Of(selP, state.offset);
     const zones = WY.tierZones(j0, state.tierList).map(z => Object.assign(z, stats(z.from, z.to)));
     return {
       // vue sérialisable envoyée au panneau (pas de fonctions) ; S.extra : champs propres à la source (balance de flotte)
       view: Object.assign({
-        source: SRC.kind, selP, isAuto: sel == null, j0, offset: state.offset, ref,
+        source: SRC.kind, selP, isAuto: selDay == null, j0, offset: state.offset, ref,
         grid: { auto: grid.auto, p1: grid.p1, len: grid.len },
         has: { rpd: !!S.cur, ly: !!S.ly, lyf: !!S.lyf }, kind: S.kind, windowDays: S.windowDays, metric: S.metric, metricBlocked: S.metricBlocked, invalid: S.invalid,
         charts: list.map(c => ({ i: c.i, title: c.title, score: SRC.roleScore(c.chart, state.maps[SRC.chartKey(c.chart)]) })), dataIdx: data.i, dataAuto: state.dataIdx == null,
@@ -85,11 +71,14 @@
       grid,
     };
   }
-  const signature = data => [state.periods, state.tiers, JSON.stringify(state.tierList), state.gridDate, state.gridNum, state.gridLen, state.gridUnit, state.offset, state.dataIdx, JSON.stringify(state.maps), JSON.stringify(state.occTh), sel,
+  const signature = data => [state.periods, state.tiers, JSON.stringify(state.tierList), state.gridDate, state.gridNum, state.gridLen, state.gridUnit, state.offset, state.dataIdx, JSON.stringify(state.maps), JSON.stringify(state.occTh), selDay,
     list.map(c => c.chart.__wypId).join(), SRC.dataSignature(data.chart)].join('|');
 
   // ---------- pont vers le panneau ----------
   const post = msg => window.postMessage({ __wyp: 1, dir: 'to-panel', msg }, location.origin);
+  // Vers le relais (monde isolé) : réglages communs aux deux sites, enregistrés dans chrome.storage par le relais.
+  const toRelay = msg => window.postMessage({ __wyp: 1, dir: 'to-relay', msg }, location.origin);
+  const report = cfgChanged => toRelay({ type: 'report', site: SRC.kind, cfgChanged: !!cfgChanged, cfg: WY.pickShared(state), sel: { from: selDay, offset: state.offset } });
   const snapshot = () => post({ type: 'snapshot', state, view });
 
   // Les périodes et les paliers sont dessinés sur tous les graphiques de la page : ils partagent le même axe des dates.
@@ -107,12 +96,28 @@
     const m = compute(data);
     view = m.view; plan = m.plan; model = m;
     paintAll();
-    list.forEach(c => SRC.bindPick(c.chart, day => { if (!state.periods) return; sel = model.grid.indexAt(day); refresh(); }));
+    list.forEach(c => SRC.bindPick(c.chart, day => { if (!state.periods) return; selDay = model.grid.at(model.grid.indexAt(day)).from; refresh(); report(false); }));
     drawnSig = signature(data);
     sentNoChart = false;
     snapshot();
   }
-  const changed = () => { save(); refresh(); };
+  // Changement fait ici (panneau, clic) : enregistré, redessiné, puis signalé au relais pour l'autre site.
+  const sharedSig = () => JSON.stringify(WY.pickShared(state));
+  const changed = before => { save(); refresh(); report(before != null && before !== sharedSig()); };
+  // Changement venu de l'autre site (via le relais) : appliqué sans être renvoyé (pas de boucle).
+  function applyShared(m) {
+    const sh = WY.cleanShared(m.shared);
+    let dirty = false, gridMoved = false;
+    if (sh.cfg) WY.SHARED_KEYS.forEach(k => {
+      if (JSON.stringify(state[k]) === JSON.stringify(sh.cfg[k])) return;
+      state[k] = sh.cfg[k]; dirty = true; if (k !== 'tierList') gridMoved = true;
+    });
+    if (m.withSel && sh.sync && sh.sel) {
+      if (sh.sel.from !== selDay) { selDay = sh.sel.from; dirty = true; }
+      if (sh.sel.offset !== state.offset) { state.offset = sh.sel.offset; dirty = true; }
+    } else if (gridMoved) selDay = null;   // même règle qu'un réglage local de la grille : retour à la période en cours
+    if (dirty) { save(); refresh(); }
+  }
 
   // ---------- actions venant du panneau ----------
   function handle(m) {
@@ -120,16 +125,17 @@
       case 'hello': return snapshot();
       case 'signals': signalItems = (Array.isArray(m.items) ? m.items : []).slice(0, 400).filter(i => i && Number.isInteger(i.k) && ['raise', 'lower', 'hold', 'review'].includes(i.kind))
         .map(i => ({ k: i.k, kind: i.kind, alpha: Math.min(1, Math.max(0, +i.alpha || 0)) })); paintAll(); return;
+      case 'shared': return applyShared(m);
       case 'toggle': if (m.name === 'periods' || m.name === 'tiers' || m.name === 'signals') { state[m.name] = !state[m.name]; changed(); } return;
-      case 'step': if (view) { sel = view.selP.k + (m.d > 0 ? 1 : -1); changed(); } return;
-      case 'auto': sel = null; changed(); return;
-      case 'select': sel = int(m.k, -2000, 2000, 0); changed(); return;
+      case 'step': if (view && model) { selDay = model.grid.at(view.selP.k + (m.d > 0 ? 1 : -1)).from; changed(); } return;
+      case 'auto': selDay = null; changed(); return;
+      case 'select': if (model) { selDay = model.grid.at(int(m.k, -2000, 2000, 0)).from; changed(); } return;
       case 'config': {
-        const patch = sanitize(m.patch || {});
+        const patch = sanitize(m.patch || {}), before = sharedSig();
         Object.assign(state, patch);
         if ('dataIdx' in patch) state.dataKey = patch.dataIdx != null && list[patch.dataIdx] ? SRC.chartKey(list[patch.dataIdx].chart) : null;
-        if (['gridDate', 'gridNum', 'gridLen', 'gridUnit'].some(k => k in patch)) sel = null;
-        changed(); return;
+        if (['gridDate', 'gridNum', 'gridLen', 'gridUnit'].some(k => k in patch)) selDay = null;
+        changed(before); return;
       }
       case 'map': {   // rôle d'une série : { role, key } ; key = clé de série | 'none' | null (retour à l'automatique)
         if (!view || !WY.ROLES.includes(m.role)) return;
@@ -149,6 +155,8 @@
     if (e.source !== window || !d || d.__wyp !== 1 || d.dir !== 'to-page') return;
     try { handle(d.msg); } catch (err) { console.warn('[Yield] action ignorée', err); }
   });
+  // Au démarrage : le relais répond avec les réglages communs (ou les amorce avec ceux de cette page s'il n'y en a pas encore).
+  toRelay({ type: 'ready', site: SRC.kind, cfg: WY.pickShared(state), sel: { from: null, offset: state.offset } });
 
   // ---------- synchro avec la SPA (graphiques recréés après « Appliquer » ; tableau Rentway reconstruit à chaque recherche) ----------
   let warned = false;
