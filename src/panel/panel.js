@@ -247,7 +247,7 @@
     return `<div><div class="lbl">Occupation · ${pLabel(v.selP)}</div>
         <div class="big">${a ? occ(a.occ) : '–'}</div>
         <div class="mut small">${a ? `pic ${occ(a.peak)}${a.peakDay != null ? ` le ${fmtDM(a.peakDay)}` : ''} · dispo min ${a.minAvail}` : 'Hors des dates du tableau'}</div></div>
-      <div class="cmp">${l < 0 ? '<span class="pill na">–</span>' : `<span class="lv lv${l}" title="Niveau du jour le plus chargé, toutes catégories">${WY.OCC_LEVELS[l]}</span>`}
+      <div class="cmp">${l < 0 ? '<span class="pill na">–</span>' : `<span class="lv lv${l}" title="Niveau du jour le plus chargé, toutes catégories additionnées">Global · ${WY.OCC_LEVELS[l]}</span>`}
         <div class="mut small">${a ? (t.length ? `${t.length} catégorie${t.length > 1 ? 's' : ''} en tension` : 'Aucune catégorie en tension') : ''}</div>
         ${t.length ? `<div class="tense">${t.slice(0, 8).map(c => `<span class="cat lv${lvOf(catOf(c))}" title="${esc(catTitle(catOf(c)))}">${esc(c)}</span>`).join('')}${t.length > 8 ? `<span class="mut small">+${t.length - 8}</span>` : ''}</div>` : ''}</div>`;
   }

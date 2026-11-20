@@ -4,7 +4,8 @@
   "scripts": {
     "test": "node run.js",
     "screenshots": "node screenshots.js",
-    "test:rentway": "node rentway.js"
+    "test:rentway": "node rentway.js",
+    "screenshots:rentway": "node screenshots-rentway.js"
   },
   "devDependencies": {
     "highcharts": "^13.1.1",

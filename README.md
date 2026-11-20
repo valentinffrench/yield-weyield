@@ -44,6 +44,11 @@ Le panneau suit l'onglet actif. S'il affiche « Page non connectée », recharge
 
 ## Balance de flotte Rentway
 Même panneau, mêmes périodes et mêmes paliers, posés sur le tableau de la Balance de flotte (vision micro des disponibilités) :
+
+![Balance de flotte Rentway : périodes, paliers et J0 posés sur le tableau, occupation par catégorie et par palier dans le panneau latéral](docs/img/rentway-vue-ensemble.png)
+
+*P31 choisie (J0 = 18 déc.) : la période et les paliers 1-2j, 3-6j, 7-13j… sont dessinés sous les dates et encadrés dans le tableau ; le panneau donne l'occupation de la période, les catégories en tension et, onglet Catégories, le pic d'occupation de chaque catégorie par palier. Capture réalisée sur une maquette à données synthétiques (flottes et disponibilités fictives).*
+
 - **Dans le tableau** : sous les dates, une rangée de périodes (la période choisie en foncé) et deux rangées de paliers ; dans les valeurs, séparateurs de périodes, cadres de couleur des paliers et colonne J0 en pointillé. Le calque suit le défilement, se redessine après chaque recherche et **laisse passer les clics** (un clic sur une valeur ouvre toujours le détail Rentway). Un **clic sur une date de l'en-tête** choisit la période.
 - **Synthèse** : occupation de la période (1 − dispo ÷ flotte, jours additionnés, toutes catégories affichées), jour le plus chargé, dispo minimale, et les **catégories en tension** (jour le plus chargé ≥ seuil « limite », ou dispo négative).
 - **Paliers / Périodes** : occupation moyenne, pic, dispo minimale et son jour, nombre de catégories en tension. **Cumulé** = du premier palier à la fin de celui-ci : le goulot que traverse une location de cette durée.
@@ -111,6 +116,7 @@ src/panel/            panel.html / .css / .js : vue + actions, aucun calcul mét
 test/*.test.js        tests unitaires        →  npm test   (dont test/fleet.test.js : balance de flotte)
 test/browser/         bancs navigateur       →  cd test/browser && npm install && npm test   (WeYield)
                                                                           puis npm run test:rentway   (Rentway)
+                                         captures du README  →  npm run screenshots   /   npm run screenshots:rentway
 ```
 Le panneau ne touche pas à la page : il reçoit des instantanés du moteur et lui renvoie des actions validées (clés autorisées, bornes). L'état est conservé dans le `localStorage` de la page (clé `wyYield3`) ; les réglages des versions précédentes sont repris au premier lancement.
 
