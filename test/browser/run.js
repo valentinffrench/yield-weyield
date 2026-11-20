@@ -221,8 +221,9 @@ const near = (a, b, e = 0.06) => Math.abs(a - b) < e;
   ok('copie TSV : 15 colonnes, départs + 6 paliers', lines.length === 8 && lines.every(l => l.split('\t').length === 15), lines.length + ' lignes');
   ok('retour visuel « Copié ✓ »', /Copié/.test(await txt('#live')));
 
-  // 11. persistance + reconnexion après rechargement de la page WeYield
-  await A.evaluate(() => localStorage.setItem('wyYield3', JSON.stringify(Object.assign(JSON.parse(localStorage.getItem('wyYield3')), { offset: 3 }))));
+  // 11. persistance + reconnexion après rechargement de la page WeYield (v3.5.1 : le décalage de J0 est réglé dans le panneau,
+  //     comme en vrai : il est enregistré dans la page ET dans les réglages communs, qui font foi au rechargement)
+  for (let i = 0; i < 3; i++) { await P.click('[data-off="1"]'); await wait(200); }
   await A.reload();
   await P.waitForSelector('#app[data-conn=ok]', { timeout: 10000 }); await wait(1500);
   ok('rechargement de la page : le panneau se reconnecte seul', (await txt('#statusTxt')) === 'Connecté');
@@ -475,7 +476,8 @@ const near = (a, b, e = 0.06) => Math.abs(a - b) < e;
   await P.screenshot({ path: path.join(OUT, 'shot-9-narrow.png'), fullPage: true });
   await A.bringToFront(); await A.screenshot({ path: path.join(OUT, 'shot-10-chart.png') });
 
-  // 15. migration v1 / v2
+  // 15. migration v1 / v2 (sur une installation neuve : aucun réglage commun enregistré, la page migrée les amorce)
+  await sw.evaluate(() => new Promise(r => chrome.storage.local.remove('wypShared', r)));
   const M = await ctx.newPage(); watch(M, 'migr');
   await M.addInitScript(() => { localStorage.removeItem('wyYield3'); localStorage.setItem('wyPaliers', JSON.stringify({ v: 2, tiersTxt: '1-3, 4-9', gridDate: '2026-07-24', gridNum: 1, gridLen: 1, gridUnit: 'w', periods: false })); });
   await M.goto('https://apps.weyield.io/reservations?x=1');

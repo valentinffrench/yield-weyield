@@ -170,6 +170,45 @@
     return s;
   }
 
+  // ---------- réglages : nettoyage des modifications venues du panneau (liste blanche + bornes) ----------
+  const clampInt = (v, lo, hi, dflt) => { v = Math.round(+v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt; };
+  function sanitizePatch(p) {
+    const o = {}, int = clampInt;
+    if (!p || typeof p !== 'object') return o;
+    if (typeof p.periods === 'boolean') o.periods = p.periods;
+    if (typeof p.tiers === 'boolean') o.tiers = p.tiers;
+    if (typeof p.signals === 'boolean') o.signals = p.signals;
+    if (Array.isArray(p.tierList)) o.tierList = p.tierList.slice(0, 12).map(t => [int(t && t[0], 0, 366, 0), int(t && t[1], 0, 366, 0)]).filter(([a, b]) => b >= a && b >= 1);
+    if (typeof p.gridDate === 'string' && (p.gridDate === '' || !isNaN(parseISO(p.gridDate)))) o.gridDate = p.gridDate;
+    if ('gridNum' in p) o.gridNum = int(p.gridNum, 1, 999, 1);
+    if ('gridLen' in p) o.gridLen = int(p.gridLen, 1, 366, 1);
+    if (p.gridUnit === 'd' || p.gridUnit === 'w') o.gridUnit = p.gridUnit;
+    if ('offset' in p) o.offset = int(p.offset, -60, 60, 0);
+    if ('dataIdx' in p) o.dataIdx = p.dataIdx === null ? null : int(p.dataIdx, 0, 9, 0);
+    // Seuils d'occupation (balance de flotte) : confortable ≤ limite ≤ pic, en %.
+    if (Array.isArray(p.occTh) && p.occTh.length === 3) { const v = p.occTh.map(x => int(x, 1, 150, NaN)); if (v.every(Number.isFinite) && v[0] <= v[1] && v[1] <= v[2]) o.occTh = v; }
+    return o;
+  }
+
+  // ---------- réglages communs à WeYield et Rentway (chrome.storage.local, clé « wypShared ») ----------
+  // cfg : découpage en périodes et paliers, réglés une seule fois pour les deux sites.
+  // sync : la période choisie (jour de début, null = période en cours) et le décalage de J0 suivent d'un site à l'autre.
+  // Une sélection enregistrée n'est reprise à l'ouverture d'une page que si elle date de moins de 12 h : le lendemain, on repart de la
+  // période en cours (comme avant la synchronisation). Format v3.5.0 ({ from, cfg }, écrit par le panneau) relu tel quel.
+  const SHARED_KEYS = ['gridDate', 'gridNum', 'gridLen', 'gridUnit', 'tierList'];
+  const SEL_FRESH_MS = 12 * 3600 * 1000;
+  function cleanShared(raw) {
+    const r = raw && typeof raw === 'object' ? raw : {};
+    const p = sanitizePatch(r.cfg || {}), cfg = {};
+    SHARED_KEYS.forEach(k => { if (k in p) cfg[k] = p[k]; });
+    const s = r.sel && typeof r.sel === 'object' ? r.sel : null;
+    const sel = s ? { from: Number.isFinite(s.from) ? utcDay(s.from) : null, offset: clampInt(s.offset, -60, 60, 0) } : null;
+    return { v: 2, cfg: Object.keys(cfg).length === SHARED_KEYS.length ? cfg : null, from: r.from === 'fleet' || r.from === 'rpd' ? r.from : null,
+      sync: r.sync !== false, sel, selT: Number.isFinite(r.selT) ? r.selT : 0 };
+  }
+  const selFresh = (sh, now) => !!(sh && sh.sel && now - sh.selT < SEL_FRESH_MS);
+  const pickShared = s => { const o = {}; SHARED_KEYS.forEach(k => { o[k] = JSON.parse(JSON.stringify(s[k])); }); return o; };
+
   // ---------- export tableur (TSV, virgule décimale) ----------
   const num2 = v => (v == null ? '' : String(Math.round(v * 100) / 100).replace('.', ','));
   function toTSV(rows) {
@@ -202,5 +241,6 @@
 
   Object.assign(WY, { D, DEFAULT_TIERS, ROLES, ROLE_LABEL, ROLES_SCHEMA, stateDefaults, upgradeState, PALETTE, utcDay, isoDay, parseISO, mondayOf, fmtDM, fmtDMY,
     parseTiers, tiersToText, j0Of, tierZones, gridLenDays, makeGrid, agg, pct, zoneStats, cumZones, toTSV,
-    OCC_TH, OCC_LEVELS, rwDay, fleetFromRecords, fleetAgg, occLevel, fleetZoneStats, fleetCumZones, fleetTSV, fleetCatsTSV });
+    OCC_TH, OCC_LEVELS, rwDay, fleetFromRecords, fleetAgg, occLevel, fleetZoneStats, fleetCumZones, fleetTSV, fleetCatsTSV,
+    clampInt, sanitizePatch, SHARED_KEYS, SEL_FRESH_MS, cleanShared, selFresh, pickShared });
 })(typeof window !== 'undefined' ? window : globalThis);

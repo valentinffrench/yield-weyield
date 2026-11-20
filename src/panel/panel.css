@@ -130,6 +130,8 @@ legend{padding:12px 0 2px;font-size:11px;font-weight:700;letter-spacing:.06em;te
 .fld input[type=date]{width:100%}
 .flds .btn,.flds .seg{flex:none}
 .hint{margin:0;color:var(--mut);font-size:12px}
+.chk{display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer}
+.chk input{width:16px;height:16px;margin:0;accent-color:var(--acc)}
 select{height:32px;padding:0 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);min-width:0;max-width:100%}
 input[type=number],input[type=date]{height:32px;padding:0 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);min-width:0}
 input.num{width:64px;text-align:center}

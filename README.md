@@ -1,4 +1,4 @@
-# Yield WeYield – panneau latéral (v3.5.0)
+# Yield WeYield – panneau latéral (v3.5.1)
 
 *Chrome side-panel extension for [WeYield](https://www.weyield.io) revenue-management users: overlays pricing periods and cost-break zones on the booking charts, compares ADR (RPJ) with last year / last year final, and flags over- or under-pricing with simple rules and an optional TypeSafe "Jev" check. Unofficial, not affiliated with WeYield or TypeSafe. Documentation below in French.*
 
@@ -39,7 +39,8 @@ Le panneau suit l'onglet actif. S'il affiche « Page non connectée », recharge
 - **Synthèse** : RPJ N de la période avec Δ vs N-1 et vs N-1 final.
 - **Tableau** : *Paliers de Pk* (départs + un palier par ligne) ou *Toutes les périodes* (clic ou Entrée sur une ligne = la choisir). **Survoler une ligne la fait ressortir sur le graphique.** Chaque colonne N-1 / N-1 final donne la valeur et l'écart. **Copier** exporte en TSV (Excel / Sheets).
 - **Paliers : Par palier | Cumulé** (bascule au-dessus du tableau, mémorisée). *Par palier* : RPJ des seuls jours du palier. *Cumulé* : chaque palier va du premier palier jusqu'à lui inclus (21-30j = J0+1 → J0+30), pour N, N-1 et N-1 final. Raison : le RPJ d'une date mêle toutes les locations en cours ce jour-là ; la zone 21-30j de P13 contient aussi les départs de P14 en 14-20j, de P15 en 7-13j, etc. Le survol fait ressortir tous les paliers additionnés ; la copie suit la vue (libellés « cumulé »).
-- **Réglages** (repliés, résumé en un coup d'œil) : « Période n° 10 commence le 24/07/2026 », durée d'une période, liste des paliers (un champ par palier, couleur identique au graphique, corrigés si incohérents). Tout s'applique immédiatement.
+- **Réglages** (repliés, résumé en un coup d'œil) : « Période n° 10 commence le 24/07/2026 », durée d'une période, liste des paliers (un champ par palier, couleur identique au graphique, corrigés si incohérents). Tout s'applique immédiatement, **sur WeYield et sur Rentway** : périodes et paliers se règlent une seule fois.
+- **Même période sur les deux sites** (Réglages › WeYield ↔ Rentway, cochée par défaut) : choisir P13 sur WeYield affiche aussi P13 sur Rentway, et inversement, avec le même décalage de J0. Les onglets ouverts suivent en direct, panneau ouvert ou non. Une page ouverte plus tard reprend la période choisie si elle date de moins de 12 h, sinon la période en cours. Décochée : chaque site garde sa période (les paliers et les périodes restent communs).
 - Thème clair / sombre automatique.
 
 ## Balance de flotte Rentway
@@ -54,7 +55,7 @@ Même panneau, mêmes périodes et mêmes paliers, posés sur le tableau de la B
 - **Paliers / Périodes** : occupation moyenne, pic, dispo minimale et son jour, nombre de catégories en tension. **Cumulé** = du premier palier à la fin de celui-ci : le goulot que traverse une location de cette durée.
 - **Catégories** (remplace l'onglet Signaux) : matrice catégorie × (période, paliers) du **pic d'occupation** en %, coloré par niveau ; en surbooking, la cellule affiche la dispo négative. Survol d'une cellule = la zone ressort dans le tableau.
 - **Seuils d'occupation** (Réglages) : 81 / 86 / 87 % par défaut (confortable, limite, pic, formation yield du 16/04/2026), modifiables.
-- **Réglages communs** : chaque site garde ses réglages dans sa page ; le panneau recopie le découpage en périodes et les paliers du dernier site réglé vers l'autre (amorcé par WeYield, jamais par une page Rentway encore vierge).
+- **Réglages communs** : découpage en périodes et paliers enregistrés une fois dans l'extension et appliqués aux deux sites ; à la première installation, ils sont repris de WeYield (jamais des valeurs par défaut d'une page Rentway encore vierge). Les seuils d'occupation restent propres à Rentway.
 - Pas de prix ni de N-1 dans la balance : ni RPJ, ni signaux, ni Jev côté Rentway.
 
 Structure observée sur le vrai Rentway et méthode de dessin : [docs/rentway-layout.md](docs/rentway-layout.md).
@@ -110,17 +111,17 @@ src/chart.js          WeYield : graphiques Highcharts (détection, lecture des s
 src/pivot.js          Rentway : PivotGrid DevExtreme de la balance de flotte (lecture, calques)  │ monde MAIN
 src/engine.js         état, calcul, dessin, réception des actions — voit le site via WY.src     ┘ (dans la page)
 src/signals.js        signaux : caractéristiques, règles, requête et décodage Jev, journal (pur)
-src/relay.js          pont chrome.runtime ↔ page (monde isolé, liste blanche)
+src/relay.js          pont chrome.runtime ↔ page (monde isolé, liste blanche) ; réglages communs WeYield / Rentway (chrome.storage)
 src/background.js     clic sur l'icône → ouvre le panneau
 src/panel/            panel.html / .css / .js : vue + actions, aucun calcul métier
-test/*.test.js        tests unitaires        →  npm test   (dont test/fleet.test.js : balance de flotte)
+test/*.test.js        tests unitaires        →  npm test   (dont fleet.test.js : balance de flotte ; shared.test.js : réglages communs)
 test/browser/         bancs navigateur       →  cd test/browser && npm install && npm test   (WeYield)
                                                                           puis npm run test:rentway   (Rentway)
                                          captures du README  →  npm run screenshots   /   npm run screenshots:rentway
 ```
-Le panneau ne touche pas à la page : il reçoit des instantanés du moteur et lui renvoie des actions validées (clés autorisées, bornes). L'état est conservé dans le `localStorage` de la page (clé `wyYield3`) ; les réglages des versions précédentes sont repris au premier lancement.
+Le panneau ne touche pas à la page : il reçoit des instantanés du moteur et lui renvoie des actions validées (clés autorisées, bornes). L'état est conservé dans le `localStorage` de la page (clé `wyYield3`) ; les réglages des versions précédentes sont repris au premier lancement. Les réglages communs aux deux sites (périodes, paliers, période synchronisée) vivent dans `chrome.storage.local` (clé `wypShared`) : le relais de chaque onglet les applique au chargement et à chaque changement, et y enregistre ceux faits sur sa page.
 
-Le banc Rentway charge l'extension réelle sur une maquette de la Balance de flotte (même structure DOM et même accès Vue / DevExtreme que le vrai Rentway, données synthétiques) et vérifie 38 points : recopie des réglages depuis WeYield, alignement des calques sur des colonnes de largeurs variables, chiffres recoupés par un calcul indépendant, matrice des catégories, survol, clic sur une valeur sous le calque, clic sur une date, défilement, nouvelle recherche, seuils, copie, diagnostic, réglage renvoyé vers WeYield, thème sombre, 320 px, page sans tableau.
+Le banc Rentway charge l'extension réelle sur une maquette de la Balance de flotte (même structure DOM et même accès Vue / DevExtreme que le vrai Rentway, données synthétiques) et vérifie 48 points : réglages communs repris de WeYield, période synchronisée dans les deux sens (option décochée, reprise sous 12 h), alignement des calques sur des colonnes de largeurs variables, chiffres recoupés par un calcul indépendant, matrice des catégories, survol, clic sur une valeur sous le calque, clic sur une date, défilement, nouvelle recherche, seuils, copie, diagnostic, réglage renvoyé vers WeYield, thème sombre, 320 px, page sans tableau.
 
 Le banc WeYield charge l'extension réelle sur une maquette WeYield (vrai Highcharts, séries nommées comme dans WeYield), ouvre le panneau sur cet onglet et vérifie 114 points (avec une fausse API TypeSafe aux formats documentés) : montage, navigation, décalage, survol, clic/zoom, chiffres recoupés par un calcul indépendant, réglages, copie, reconnexion après rechargement, graphique recréé, états sans page, migration, thème sombre, 320 px.
 
@@ -139,7 +140,7 @@ Le banc WeYield charge l'extension réelle sur une maquette WeYield (vrai Highch
 - Fermer le panneau ne retire pas l'overlay du graphique : il reste tel que configuré.
 
 ## Confidentialité
-L'extension ne contacte aucun serveur de son propre chef. Elle lit les graphiques de la page `apps.weyield.io` et le tableau de la Balance de flotte Rentway ouverts dans votre navigateur (aucun appel aux API Rentway) et garde ses réglages localement (`localStorage` de la page, `chrome.storage.local` du panneau). Seul l'appel optionnel « Analyser avec Jev » sort vers `api.typesafe.ai`, avec votre propre clé et uniquement des écarts relatifs (jamais de montants). Aucune télémétrie.
+L'extension ne contacte aucun serveur de son propre chef. Elle lit les graphiques de la page `apps.weyield.io` et le tableau de la Balance de flotte Rentway ouverts dans votre navigateur (aucun appel aux API Rentway) et garde ses réglages localement (`localStorage` de la page, `chrome.storage.local` de l'extension). Seul l'appel optionnel « Analyser avec Jev » sort vers `api.typesafe.ai`, avec votre propre clé et uniquement des écarts relatifs (jamais de montants). Aucune télémétrie.
 
 ## Licence
 MIT, voir [LICENSE](LICENSE). « WeYield », « Rentway » et « Jev / TypeSafe » appartiennent à leurs propriétaires ; ce projet n'est ni affilié à eux ni approuvé par eux.

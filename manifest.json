@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Yield WeYield – panneau latéral",
-  "version": "3.5.0",
+  "version": "3.5.1",
   "description": "Périodes et paliers (cost-breaks) sur le graphique Réservations de WeYield et sur la Balance de flotte Rentway ; RPJ N / N-1, signaux et occupation dans un panneau latéral.",
   "minimum_chrome_version": "114",
   "permissions": [
@@ -59,6 +59,7 @@
         "https://rentwayv1.emotionmobility.com/*"
       ],
       "js": [
+        "src/core.js",
         "src/relay.js"
       ],
       "run_at": "document_start"

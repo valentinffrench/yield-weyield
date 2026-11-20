@@ -200,12 +200,49 @@ const EXPECT = `(([from, to, lim]) => {
   ok('les deux calques coupés : tableau intact', (await geo()).layers === 0);
   await P.click('[data-layer=periods]'); await P.click('[data-layer=tiers]'); await wait(300);
 
-  // --- 13. un réglage fait sur Rentway repart vers WeYield
+  // --- 13. un réglage fait sur Rentway vaut aussi pour WeYield (réglé une seule fois), en direct
   await P.click('#tiers [data-del="5"]');
   ok('Rentway : palier 31-60 supprimé', await until(async () => (await R.evaluate(() => JSON.parse(localStorage.getItem('wyYield3')).tierList.length)) === 5));
   ok('réglages communs mis à jour depuis Rentway', await until(async () => { const s = await sharedNow(); return s.from === 'fleet' && s.cfg.tierList.length === 5; }));
-  await PA.goto(panelUrl(tabA)); await PA.waitForSelector('#app[data-conn=ok]', { timeout: 8000 });
-  ok('WeYield reçoit les 5 paliers à la reconnexion du panneau', await untilP(PA, async () => (await A.evaluate(() => JSON.parse(localStorage.getItem('wyYield3')).tierList.length)) === 5));
+  ok('WeYield applique les 5 paliers aussitôt, panneau non rechargé', await untilP(PA, async () => (await A.evaluate(() => JSON.parse(localStorage.getItem('wyYield3')).tierList.length)) === 5
+    && (await PA.locator('tr[data-z]').count()) === 5));
+
+  // --- 13b. même période sur les deux sites (option cochée par défaut)
+  const pkn = async pg => (await pg.locator('#pkn').innerText()).trim();
+  const clickIfShown = async (pg, sel) => { if (await pg.locator(sel).isVisible()) await pg.click(sel); };   // « Période en cours », ↺ : masqués quand inutiles
+  await clickIfShown(P, '#today'); await clickIfShown(PA, '#today'); await wait(600);
+  ok('option « Même période sur les deux sites » cochée par défaut', await P.locator('#syncsel').isChecked() && (await sharedNow()).sync === true);
+  await P.click('[data-op=next]');
+  ok('Rentway → P30 : WeYield affiche aussi P30', await untilP(PA, async () => (await pkn(PA)) === 'P30') && (await pkn(P)) === 'P30', `${await pkn(P)} / ${await pkn(PA)}`);
+  await PA.click('[data-off="1"]');
+  ok('J0 décalé de +1 j sur WeYield : Rentway suit', await until(async () => (await txt('#off')) === '+1 j' && /11 → 17 déc/.test(await txt('#pkd'))), await txt('#off'));
+  await PA.click('[data-op=prev]');
+  ok('WeYield → P29 : Rentway suit', await until(async () => (await pkn(P)) === 'P29'));
+  // une page Rentway ouverte maintenant reprend la période synchronisée ; au-delà de 12 h, elle repart de la période en cours
+  const R2 = await ctx.newPage(); watch(R2, 'rw2'); await R2.clock.setFixedTime(new Date('2026-12-05T10:00:00-04:00'));
+  await R2.goto(RW + '2'); await R2.waitForFunction(() => window.__mock && document.querySelector('#pivotgrid table'));
+  await P.click('[data-op=next]'); await until(async () => (await pkn(PA)) === 'P30');
+  const tabR2 = await tabOf(RW + '2');
+  const P2 = await ctx.newPage(); watch(P2, 'panel-rw2'); await P2.setViewportSize({ width: 400, height: 900 });
+  await P2.goto(panelUrl(tabR2)); await P2.waitForSelector('#app[data-conn=ok]', { timeout: 8000 });
+  ok('2e onglet Rentway : suit la période synchronisée (P30, J0 +1 j)', await untilP(P2, async () => (await pkn(P2)) === 'P30' && (await P2.locator('#off').innerText()).trim() === '+1 j'), await pkn(P2));
+  await sw.evaluate(() => new Promise(r => chrome.storage.local.get('wypShared', o => chrome.storage.local.set({ wypShared: Object.assign(o.wypShared, { selT: Date.now() - 13 * 3600e3 }) }, r))));
+  await R2.reload(); await R2.waitForFunction(() => window.__mock && document.querySelector('#pivotgrid table'));
+  await P2.waitForSelector('#app[data-conn=ok]', { timeout: 10000 });
+  ok('sélection de plus de 12 h : une page rouverte repart de la période en cours (P29)', await untilP(P2, async () => (await pkn(P2)) === 'P29'), await pkn(P2));
+  await P2.close(); await R2.close();
+  // décocher : chaque site garde sa période ; recocher : l'autre site rejoint celle de l'onglet courant
+  await P.click('[data-op=prev]'); await untilP(PA, async () => (await pkn(PA)) === 'P29');
+  if (!(await P.locator('#settings').evaluate(d => d.open))) await P.click('#settings summary');
+  await P.click('#syncsel');
+  ok('option décochée : enregistrée', await until(async () => (await sharedNow()).sync === false) && /propre période/.test(await txt('#synchint')));
+  await P.click('[data-op=next]'); await wait(900);
+  ok('option décochée : Rentway P30, WeYield reste sur P29', (await pkn(P)) === 'P30' && (await pkn(PA)) === 'P29', `${await pkn(P)} / ${await pkn(PA)}`);
+  await P.click('#tiers [data-del="4"]');
+  ok('option décochée : les paliers restent communs', await untilP(PA, async () => (await PA.locator('tr[data-z]').count()) === 4));
+  await P.click('#syncsel');
+  ok('option recochée : WeYield rejoint la période de Rentway (P30)', await untilP(PA, async () => (await pkn(PA)) === 'P30'), await pkn(PA));
+  await clickIfShown(P, '#today'); await clickIfShown(P, '#offReset'); await until(async () => (await txt('#off')) === '0 j');
 
   // --- 14. sombre, étroit, page sans tableau
   await P.click('[data-tab=cats]'); await P.emulateMedia({ colorScheme: 'dark' }); await wait(200);
