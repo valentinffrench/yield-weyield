@@ -98,7 +98,7 @@ Le rouge démarre donc à 75 % d'occupation, en dessous des seuils yield de réf
 - Couleur des cellules posée en style inline par `onCellPrepared` de Rentway : ne pas la réécrire, superposer.
 - Pas de rangée libre au-dessus des dates : prévoir une bande de 16 px pour les étiquettes de période (sinon elles masquent la date).
 
-## 6. Conséquences pour l'extension
+## 6. Conséquences pour l'extension (mises en œuvre en v3.5.0 : `src/pivot.js`)
 
 | Sujet | WeYield (actuel) | Rentway (à faire) |
 | --- | --- | --- |
@@ -108,7 +108,9 @@ Le rouge démarre donc à 75 % d'occupation, en dessous des seuils yield de réf
 | Dessin | `addPlotBand` Highcharts | calques DOM dans les deux `.dx-scrollable-content` |
 | Mesures | RPJ, volume N / N-1 | dispo et flotte par catégorie × jour → taux d'occupation par période et par palier (pas de prix, pas de N-1) |
 
-Architecture proposée : un fichier `src/pivot.js` (adaptateur Rentway, même interface que `src/chart.js` : trouver, lire, dessiner, effacer) ; `core.js` (grille de périodes, paliers) réutilisé tel quel ; l'onglet Signaux et Jev restent propres à WeYield.
+Architecture retenue : `src/pivot.js` expose dans `WY.src` la même interface que `src/chart.js` (trouver, lire, dessiner, effacer, clic, diagnostic, statistiques de zone) ; `engine.js` ne connaît que `WY.src`. La grille de périodes et les paliers de `core.js` sont réutilisés tels quels ; l'occupation par zone (`fleetZoneStats`) y est ajoutée. L'onglet Signaux et Jev restent propres à WeYield.
+
+Validé le 20/11/2026 sur le vrai Rentway (injection temporaire, retirée ensuite) : 3 801 enregistrements, 21 catégories, calques alignés à 1 px près, clic sur une date → période, survol, redimensionnement de la fenêtre.
 
 ## 7. Non vérifié
 

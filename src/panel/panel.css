@@ -18,6 +18,7 @@ button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--ring);outline-offset:2px;border-radius:6px}
 [hidden]{display:none!important}
+[data-source=fleet] .rpd-only,[data-source=rpd] .fleet-only{display:none!important}
 .mut{color:var(--mut)}.small{font-size:12px}
 .row{display:flex;align-items:center;gap:8px}.between{justify-content:space-between}
 
@@ -167,4 +168,26 @@ input:invalid{border-color:var(--dn)}
 .vote .done{color:var(--mut);font-size:12px;margin-right:auto}
 .board{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;display:grid;gap:4px}
 .board b{font-size:15px}
+/* balance de flotte (Rentway) : niveaux d'occupation (texte + couleur, jamais la couleur seule) */
+:root{--lv0:#e3eef7;--lv0i:#2d5878;--lv1:#e3f3ea;--lv1i:#17703f;--lv2:#fdf0d2;--lv2i:#8a5a00;--lv3:#fbe1dc;--lv3i:#a8281f;--lv4:#7d1d16;--lv4i:#fff}
+@media (prefers-color-scheme:dark){:root{--lv0:#1c2b38;--lv0i:#9cc3e3;--lv1:#173226;--lv1i:#74d6a0;--lv2:#3a2e12;--lv2i:#f2c661;--lv3:#3b1f1d;--lv3i:#ff9d94;--lv4:#ff9d94;--lv4i:#2a0d0a}}
+.lv{display:inline-block;padding:1px 7px;border-radius:999px;font-weight:700;font-size:12px;white-space:nowrap}
+.lv0{background:var(--lv0);color:var(--lv0i)}.lv1{background:var(--lv1);color:var(--lv1i)}.lv2{background:var(--lv2);color:var(--lv2i)}
+.lv3{background:var(--lv3);color:var(--lv3i)}.lv4{background:var(--lv4);color:var(--lv4i)}
+.lvt{padding:0 5px;border-radius:5px}
+.tense{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-width:150px}
+.cat{display:inline-block;padding:0 5px;border-radius:5px;font-size:11px;font-weight:700}
+td.tn small{white-space:normal;max-width:96px;margin-left:auto}
+.hm table{table-layout:fixed}
+.hm th{padding:6px 2px 4px;text-align:center;font-size:10px;letter-spacing:0;text-transform:none}
+.hm th:first-child{text-align:left;padding-left:10px;width:58px}
+.hm td{padding:5px 2px;text-align:center;font-size:11.5px;font-weight:700;border-top:1px solid var(--card);border-left:1px solid var(--card)}
+.hm td:first-child{text-align:left;padding-left:10px;min-width:0;font-weight:700;border-left:0}
+.hm td:first-child small{display:block;font-size:10px}
+.hm td.na{color:var(--mut);font-weight:400;background:none}
+.hm td[data-z],.hm td[data-p]{cursor:default}
+.hm td[data-z]:hover,.hm td[data-p]:hover{outline:2px solid var(--ink);outline-offset:-2px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;font-size:11px}
+.legend .lv{font-size:11px;font-weight:600}
+
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}

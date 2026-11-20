@@ -1,10 +1,12 @@
-// Moteur (monde MAIN, dans la page WeYield) : état, calcul du modèle, dessin des graphiques.
+// Moteur (monde MAIN, dans la page WeYield ou Rentway) : état, calcul du modèle, dessin.
 // Aucune interface ici : le panneau latéral reçoit des instantanés (snapshot) et renvoie des actions,
 // via relay.js (monde isolé) qui fait le pont avec chrome.runtime.
+// Le site est vu à travers WY.src : graphiques Highcharts de WeYield (chart.js) ou balance de flotte Rentway (pivot.js).
 (() => {
   const WY = window.__WYP;
-  if (!WY || WY.started) return;
+  if (!WY || !WY.src || WY.started) return;
   WY.started = true;
+  const SRC = WY.src;
 
   const KEY = 'wyYield3';
 
@@ -42,6 +44,8 @@
     if (p.gridUnit === 'd' || p.gridUnit === 'w') o.gridUnit = p.gridUnit;
     if ('offset' in p) o.offset = int(p.offset, -60, 60, 0);
     if ('dataIdx' in p) o.dataIdx = p.dataIdx === null ? null : int(p.dataIdx, 0, 9, 0);
+    // Seuils d'occupation (balance de flotte) : confortable ≤ limite ≤ pic, en %.
+    if (Array.isArray(p.occTh) && p.occTh.length === 3) { const v = p.occTh.map(x => int(x, 1, 150, NaN)); if (v.every(Number.isFinite) && v[0] <= v[1] && v[1] <= v[2]) o.occTh = v; }
     return o;
   }
 
@@ -54,34 +58,35 @@
 
   // ---------- modèle ----------
   function compute(data) {
-    const ckey = WY.chartKey(data.chart);
-    const S = WY.readSeries(data.chart, state.maps[ckey]);
-    const ref = WY.chartRefDay(data.chart);
+    const ckey = SRC.chartKey(data.chart);
+    const S = SRC.readSeries(data.chart, state.maps[ckey]);
+    const ref = SRC.chartRefDay(data.chart);
+    const stats = (from, to) => SRC.zoneStats(S, from, to, state);
     const grid = WY.makeGrid(state, ref);
     const periods = grid.inRange(S.range[0], S.range[1]);
     const k = sel != null ? sel : grid.indexAt(ref);
     const selP = grid.at(k);
     const j0 = WY.j0Of(selP, state.offset);
-    const zones = WY.tierZones(j0, state.tierList).map(z => Object.assign(z, WY.zoneStats(S, z.from, z.to)));
+    const zones = WY.tierZones(j0, state.tierList).map(z => Object.assign(z, stats(z.from, z.to)));
     return {
-      // vue sérialisable envoyée au panneau (pas de fonctions)
-      view: {
-        selP, isAuto: sel == null, j0, offset: state.offset, ref,
+      // vue sérialisable envoyée au panneau (pas de fonctions) ; S.extra : champs propres à la source (balance de flotte)
+      view: Object.assign({
+        source: SRC.kind, selP, isAuto: sel == null, j0, offset: state.offset, ref,
         grid: { auto: grid.auto, p1: grid.p1, len: grid.len },
         has: { rpd: !!S.cur, ly: !!S.ly, lyf: !!S.lyf }, kind: S.kind, windowDays: S.windowDays, metric: S.metric, metricBlocked: S.metricBlocked, invalid: S.invalid,
-        charts: list.map(c => ({ i: c.i, title: c.title, score: WY.roleScore(c.chart, state.maps[WY.chartKey(c.chart)]) })), dataIdx: data.i, dataAuto: state.dataIdx == null,
+        charts: list.map(c => ({ i: c.i, title: c.title, score: SRC.roleScore(c.chart, state.maps[SRC.chartKey(c.chart)]) })), dataIdx: data.i, dataAuto: state.dataIdx == null,
         series: S.series, roles: S.roles, autoRoles: S.auto, mapped: state.maps[ckey] || {}, ckey,
-        selStats: WY.zoneStats(S, selP.from, selP.to),
+        selStats: stats(selP.from, selP.to),
         zones,
-        cumZones: WY.cumZones(S, zones),
-        periodRows: periods.map(p => Object.assign({ p }, WY.zoneStats(S, p.from, p.to))),
-      },
+        cumZones: SRC.cumZones(S, zones, state),
+        periodRows: periods.map(p => Object.assign({ p }, stats(p.from, p.to))),
+      }, S.extra || {}),
       plan: { showPeriods: state.periods, showTiers: state.tiers, periods, selK: selP.k, j0, zones },
       grid,
     };
   }
-  const signature = data => [state.periods, state.tiers, JSON.stringify(state.tierList), state.gridDate, state.gridNum, state.gridLen, state.gridUnit, state.offset, state.dataIdx, JSON.stringify(state.maps), sel,
-    list.map(c => c.chart.__wypId).join(), WY.dataSignature(data.chart)].join('|');
+  const signature = data => [state.periods, state.tiers, JSON.stringify(state.tierList), state.gridDate, state.gridNum, state.gridLen, state.gridUnit, state.offset, state.dataIdx, JSON.stringify(state.maps), JSON.stringify(state.occTh), sel,
+    list.map(c => c.chart.__wypId).join(), SRC.dataSignature(data.chart)].join('|');
 
   // ---------- pont vers le panneau ----------
   const post = msg => window.postMessage({ __wyp: 1, dir: 'to-panel', msg }, location.origin);
@@ -90,19 +95,19 @@
   // Les périodes et les paliers sont dessinés sur tous les graphiques de la page : ils partagent le même axe des dates.
   // Sur new-bookings/*, WeYield dessine des « ? » dans les premiers pixels du tracé : nos libellés descendent d'autant (valeur à confirmer à l'œil).
   const labelDy = c => (c.host && c.host.closest && c.host.closest('app-new-bookings-chart, app-new-bookings-variation-chart') ? 16 : 0);
-  const paintAll = () => { painted = list.map(c => c.chart); drawnCount = plan ? list.reduce((n, c) => n + WY.paint(c.chart, Object.assign({}, plan, { hot, signals: state.signals ? signalItems : [], labelDy: labelDy(c) })), 0) : 0; };
-  function unpaint(charts) { charts.forEach(ch => { try { WY.clearOverlay(ch); } catch (e) {} }); }
+  const paintAll = () => { painted = list.map(c => c.chart); drawnCount = plan ? list.reduce((n, c) => n + SRC.paint(c.chart, Object.assign({}, plan, { hot, signals: state.signals ? signalItems : [], labelDy: labelDy(c) })), 0) : 0; };
+  function unpaint(charts) { charts.forEach(ch => { try { SRC.clearOverlay(ch); } catch (e) {} }); }
 
   function refresh() {
-    list = WY.findCharts();
-    const data = WY.pickData(list, state.dataIdx, state.maps, state.dataKey);
+    list = SRC.findCharts();
+    const data = SRC.pickData(list, state.dataIdx, state.maps, state.dataKey);
     unpaint(painted.filter(ch => !list.some(c => c.chart === ch)));
     drawnSig = '';
     if (!data) { painted = []; view = null; plan = null; snapshot(); return; }
     const m = compute(data);
     view = m.view; plan = m.plan; model = m;
     paintAll();
-    list.forEach(c => WY.bindPick(c.chart, day => { if (!state.periods) return; sel = model.grid.indexAt(day); refresh(); }));
+    list.forEach(c => SRC.bindPick(c.chart, day => { if (!state.periods) return; sel = model.grid.indexAt(day); refresh(); }));
     drawnSig = signature(data);
     sentNoChart = false;
     snapshot();
@@ -122,7 +127,7 @@
       case 'config': {
         const patch = sanitize(m.patch || {});
         Object.assign(state, patch);
-        if ('dataIdx' in patch) state.dataKey = patch.dataIdx != null && list[patch.dataIdx] ? WY.chartKey(list[patch.dataIdx].chart) : null;
+        if ('dataIdx' in patch) state.dataKey = patch.dataIdx != null && list[patch.dataIdx] ? SRC.chartKey(list[patch.dataIdx].chart) : null;
         if (['gridDate', 'gridNum', 'gridLen', 'gridUnit'].some(k => k in patch)) sel = null;
         changed(); return;
       }
@@ -136,27 +141,27 @@
       }
       case 'hover': hot = { zone: Number.isInteger(m.zone) ? m.zone : null, period: Number.isInteger(m.period) ? m.period : null, cum: m.cum === true }; paintAll(); return;
       case 'bye': hot = {}; paintAll(); return;
-      case 'diag': { list = WY.findCharts(); const d = WY.pickData(list, state.dataIdx, state.maps, state.dataKey); return post({ type: 'diag', data: WY.diagnose(list, d ? d.i : null, state.maps) }); }
+      case 'diag': { list = SRC.findCharts(); const d = SRC.pickData(list, state.dataIdx, state.maps, state.dataKey); return post({ type: 'diag', data: SRC.diagnose(list, d ? d.i : null, state.maps) }); }
     }
   }
   window.addEventListener('message', e => {
     const d = e.data;
     if (e.source !== window || !d || d.__wyp !== 1 || d.dir !== 'to-page') return;
-    try { handle(d.msg); } catch (err) { console.warn('[Yield WeYield] action ignorée', err); }
+    try { handle(d.msg); } catch (err) { console.warn('[Yield] action ignorée', err); }
   });
 
-  // ---------- synchro avec la SPA (les graphiques sont recréés après « Appliquer », en navigant…) ----------
+  // ---------- synchro avec la SPA (graphiques recréés après « Appliquer » ; tableau Rentway reconstruit à chaque recherche) ----------
   let warned = false;
   setInterval(() => {
     try {
-      const cur = WY.findCharts();
-      const data = WY.pickData(cur, state.dataIdx, state.maps, state.dataKey);
+      const cur = SRC.findCharts();
+      const data = SRC.pickData(cur, state.dataIdx, state.maps, state.dataKey);
       if (!data) { if (!sentNoChart) { sentNoChart = true; unpaint(painted); painted = []; view = null; snapshot(); } return; }
       list = cur;
-      const wiped = drawnCount > 0 && list.some(c => !WY.hasOverlay(c.chart));
+      const wiped = drawnCount > 0 && list.some(c => !SRC.hasOverlay(c.chart));
       if (wiped || signature(data) !== drawnSig) refresh();
     } catch (e) {
-      if (!warned) { warned = true; console.warn('[Yield WeYield] erreur, nouvel essai à la prochaine seconde', e); }
+      if (!warned) { warned = true; console.warn('[Yield] erreur, nouvel essai à la prochaine seconde', e); }
     }
   }, 1000);
 })();

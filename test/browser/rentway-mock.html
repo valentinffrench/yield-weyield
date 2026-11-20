@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rentway Web</title>
+<!-- Maquette de la Balance de flotte Rentway pour le banc de test (test/browser/rentway.js).
+     Reproduit ce que l'extension lit et touche, tel qu'observé sur le vrai Rentway le 20/11/2026 (docs/rentway-layout.md) :
+     #pivotgrid.dx-pivotgrid avec __vue__.instance (option('dataSource'), getDataSource().getData().columns, on('contentReady')),
+     composant parent .component (__vue__.fbResult, filtres), zones .dx-area-*-cell > .dx-scrollable > .dx-scrollable-container >
+     .dx-scrollable-content > table, colonnes de largeurs variables, défilement horizontal par scrollLeft, clic sur une valeur = détail.
+     Données synthétiques : aucune donnée Rentway réelle. -->
+<style>
+  body{margin:0;font:14px Roboto,Arial,sans-serif;color:#222;background:#f4f5f7}
+  .bar{height:56px;background:#1340a8;color:#fff;display:flex;align-items:center;padding:0 20px;font-weight:700}
+  .container{padding:16px 24px}
+  .v-card{background:#fff;border:1px solid #ddd;padding:8px}
+  table{border-collapse:collapse}
+  .dx-pivotgrid-border{table-layout:fixed}
+  .dx-area-description-cell,.dx-area-row-cell{width:240px;vertical-align:top;padding:0}
+  .dx-area-column-cell,.dx-area-data-cell{padding:0;vertical-align:top}
+  .dx-scrollable-container{overflow:hidden;width:720px}
+  .dx-area-column-cell td{box-sizing:border-box;height:86px;padding:7px 10px;vertical-align:top;text-align:center;border:1px solid #e3e3e3;color:#666;overflow:hidden;word-break:break-all}
+  .dx-area-data-cell td,.dx-area-row-cell td{box-sizing:border-box;height:34px;padding:6px 4px;text-align:center;border:1px solid #e3e3e3;overflow:hidden}
+  .dx-area-row-cell td{text-align:left;color:#666}
+  .dx-area-description-cell .desc{box-sizing:border-box;height:86px;border:1px solid #e3e3e3;padding:8px}
+  #detail{position:fixed;right:12px;bottom:12px;background:#fff;border:1px solid #888;padding:8px;display:none}
+</style>
+</head>
+<body>
+<div class="bar">rentway — CARIBE CAR / AGENCE AEROPORT</div>
+<div class="container"><div class="v-main"><div class="component" id="ctl"><div class="v-card"><div id="pivotgrid" class="dx-widget dx-pivotgrid dx-row-lines"></div></div></div></div></div>
+<div id="detail"></div>
+<script>
+(() => {
+  const CATS = [['MBMR', 60], ['ECMR', 55], ['EDMR', 90], ['IFMR', 25], ['IVMD', 0], ['SFAD', 12]];
+  const LOC = 'PTP /AEROPORT DE PTP';
+  const WIDTHS = [44, 45, 47, 46, 41, 43, 48];   // largeurs observées, variables d'une colonne à l'autre
+  const pad = n => String(n).padStart(2, '0');
+
+  // Disponibilités synthétiques : vague de fond + pic de Noël (20/12 → 03/01) ; dispo négative possible (surbooking).
+  function gen(start, days, seed) {
+    const [y, m, d] = start.split('-').map(Number), out = [];
+    CATS.forEach(([g, fleet], ci) => {
+      for (let i = 0; i < days; i++) {
+        const dt = new Date(Date.UTC(y, m - 1, d + i)), mo = dt.getUTCMonth(), da = dt.getUTCDate();
+        const xmas = (mo === 11 && da >= 20) || (mo === 0 && da <= 3) ? 1 : 0;
+        const occ = Math.min(1.05, 0.5 + 0.25 * Math.sin((i + ci * 3 + seed) / 5) + 0.3 * xmas + ci * 0.02);
+        out.push({ locationID: 'APT', locationName: LOC, groupID: g, date: dt.toISOString().slice(0, 10) + 'T00:00:00',
+          availableVehicles: fleet ? Math.round(fleet * (1 - occ)) : 0, totalVehicles: fleet });
+      }
+    });
+    return out;
+  }
+  // Couleurs Rentway (getColorBalance) : occupation = 1 − dispo ÷ flotte, seuils 25 / 50 / 75 / 100.
+  const color = (a, t) => { if (t <= 0) return '#000'; const s = 100 * +(1 - a / t).toPrecision(2); return a < 0 ? '#ff7463' : s <= 25 ? '#b9e2f3' : s <= 50 ? '#cee9cf' : s <= 75 ? '#ffc82f' : s <= 100 ? '#ff7463' : '#000'; };
+
+  const handlers = {};
+  const state = { ds: null, days: [] };
+  const grid = document.getElementById('pivotgrid'), ctl = document.getElementById('ctl');
+  const inst = {
+    option: k => (k === 'dataSource' ? state.ds : undefined),
+    getDataSource: () => ({ getData: () => ({ columns: state.days.map((t, i) => ({ index: i + 1, value: new Date(t.y, t.m, t.d), text: `${pad(t.d)}-${pad(t.m + 1)}`, children: [] })), rows: [] }) }),
+    on: (ev, fn) => { (handlers[ev] = handlers[ev] || []).push(fn); return inst; },
+    off: (ev, fn) => { handlers[ev] = (handlers[ev] || []).filter(f => f !== fn); return inst; },
+  };
+  grid.__vue__ = { instance: inst, $options: { name: 'DxPivotGrid' } };
+
+  function scrollable(inner) {
+    return `<div class="dx-pivotgrid-area dx-scrollable dx-scrollable-horizontal dx-scrollable-simulated"><div class="dx-scrollable-wrapper"><div class="dx-scrollable-container"><div class="dx-scrollable-content">${inner}</div></div></div></div>`;
+  }
+  function render() {
+    const recs = state.ds.store, days = state.days, n = days.length;
+    const by = {}; recs.forEach(r => { (by[r.groupID] = by[r.groupID] || {})[r.date.slice(0, 10)] = r; });
+    const keys = days.map(t => `${t.y}-${pad(t.m + 1)}-${pad(t.d)}`);
+    const w = i => WIDTHS[i % WIDTHS.length], tw = days.reduce((s, _, i) => s + w(i), 0);
+    const cols = `<colgroup>${days.map((_, i) => `<col style="width:${w(i)}px">`).join('')}</colgroup>`;
+    const head = `<table style="table-layout:fixed;width:${tw}px">${cols}<tr>${days.map(t => `<td><span>${pad(t.d)}-${pad(t.m + 1)}</span></td>`).join('')}</tr></table>`;
+    const tot = keys.map(k => CATS.reduce((s, [g]) => s + by[g][k].availableVehicles, 0));
+    const rowsHtml = CATS.map(([g]) => `<tr data-g="${g}">${keys.map(k => { const r = by[g][k]; const c = color(r.availableVehicles, r.totalVehicles); return `<td data-date="${k}" style="background-color:${c};${c === '#000' ? 'color:#fff' : ''}"><span>${r.availableVehicles}</span></td>`; }).join('')}</tr>`).join('')
+      + `<tr>${tot.map(v => `<td><span>${v}</span></td>`).join('')}</tr><tr>${tot.map(v => `<td><span>${v}</span></td>`).join('')}</tr>`;
+    const data = `<table style="table-layout:fixed;width:${tw}px">${cols}${rowsHtml}</table>`;
+    const rowArea = `<table style="width:240px">${CATS.map(([g], i) => `<tr>${i === 0 ? `<td rowspan="${CATS.length}">${LOC}</td>` : ''}<td>${g}</td></tr>`).join('')}<tr><td colspan="2">${LOC} Total</td></tr><tr><td colspan="2" class="dx-grandtotal">Total</td></tr></table>`;
+    grid.innerHTML = `<div class="dx-pivotgrid-container"><table class="dx-pivotgrid-border dx-word-wrap"><tbody>
+      <tr><td class="dx-area-description-cell"><div class="desc">Location · Group</div></td><td class="dx-area-column-cell">${scrollable(head)}</td></tr>
+      <tr><td class="dx-area-row-cell">${scrollable(rowArea)}</td><td class="dx-area-data-cell">${scrollable(data)}</td></tr></tbody></table></div>`;
+    const hc = grid.querySelector('.dx-area-column-cell .dx-scrollable-container'), dc = grid.querySelector('.dx-area-data-cell .dx-scrollable-container');
+    dc.addEventListener('scroll', () => { hc.scrollLeft = dc.scrollLeft; });
+    hc.addEventListener('scroll', () => { dc.scrollLeft = hc.scrollLeft; });
+    // clic sur une valeur : Rentway ouvre le détail du jour (onCellClick → showDetail)
+    grid.querySelectorAll('.dx-area-data-cell tr[data-g] td').forEach(td => td.addEventListener('click', () => {
+      const g = td.parentElement.dataset.g; window.__mock.clicks.push({ g, date: td.dataset.date });
+      const el = document.getElementById('detail'); el.textContent = `Détail ${g} ${td.dataset.date}`; el.style.display = 'block';
+    }));
+    setTimeout(() => (handlers.contentReady || []).forEach(f => f({ component: inst })), 0);
+  }
+  // « Rechercher » : nouvelle plage de dates et nouvelles valeurs, le tableau est reconstruit (comme après une recherche Rentway).
+  function search({ start = '2026-12-02', days = 89, seed = 0 } = {}) {
+    const recs = gen(start, days, seed);
+    state.ds = { fields: [], store: recs };
+    const [y, m, d] = start.split('-').map(Number);
+    state.days = Array.from({ length: days }, (_, i) => { const t = new Date(Date.UTC(y, m - 1, d + i)); return { y: t.getUTCFullYear(), m: t.getUTCMonth(), d: t.getUTCDate() }; });
+    ctl.__vue__ = { fbResult: state.ds, startDate: start + 'T00:00:00', endDate: recs[recs.length - 1].date.slice(0, 10) + 'T23:59:59', btnStationZoneCountry: 'stations', btnGroupsSegments: 'groups',
+      onlyGroupedStations: true, selectedStations: [{ id: 'APT' }], selectedFleetTypes: [{ id: 'FP' }, { id: 'CDE' }], selectedGroups: CATS.map(([g]) => ({ id: g })), $options: { name: 'fleetBalanceControl' } };
+    render();
+  }
+  window.__mock = { clicks: [], search, records: () => state.ds.store, cats: CATS, remove: () => { grid.remove(); } };
+  search();
+})();
+</script>
+</body>
+</html>

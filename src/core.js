@@ -86,16 +86,87 @@
   const cumZones = (S, zones) => zones.map(z => Object.assign({ label: z.label, a: z.a, b: z.b, ci: z.ci },
     zoneStats(S, Math.min(...zones.filter(o => o.b <= z.b).map(o => o.from)), z.to)));
 
+  // ---------- balance de flotte (Rentway) : occupation par zone de dates ----------
+  // Enregistrements bruts du PivotGrid Rentway (cf. docs/rentway-layout.md) :
+  // { locationID, locationName, groupID, date:'2026-12-02T00:00:00', availableVehicles, totalVehicles }.
+  // Occupation d'un jour = 1 − dispo ÷ flotte (la règle des couleurs de Rentway). Sur une zone : jours-véhicules additionnés.
+  // Seuils de référence yield (formation du 16/04/2026) : 81-82 % confortable, 86 % limite, 87 % pic.
+  const OCC_TH = [81, 86, 87];
+  const OCC_LEVELS = ['Marge', 'Confortable', 'Limite', 'Pic', 'Surbooking'];
+  const FLEET_SKIP = new Set(['date', 'availableVehicles', 'totalVehicles', 'locationID', 'locationName']);
+  // La date est lue sur le texte (« 2026-12-02T00:00:00 », heure locale de Rentway) : jamais via new Date(), qui dépend du fuseau du poste.
+  const rwDay = v => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v == null ? '' : v)); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : NaN; };
+  function fleetFromRecords(recs) {
+    if (!Array.isArray(recs) || !recs.length || !recs[0]) return null;
+    const r0 = recs[0];
+    // Ligne « catégorie » : groupID (vue Groupes) ou segmentID (vue Segments, non observée), sinon le premier champ de ligne inconnu.
+    const catField = ['groupID', 'segmentID'].find(k => k in r0) || Object.keys(r0).find(k => !FLEET_SKIP.has(k)) || null;
+    const locField = 'locationName' in r0 ? 'locationName' : 'locationID' in r0 ? 'locationID' : null;
+    const all = new Map(), cats = new Map(), locs = new Set();
+    const add = (m, d, a, t) => { const x = m.get(d); if (x) { x.a += a; x.t += t; } else m.set(d, { a, t }); };
+    let lo = Infinity, hi = -Infinity, bad = 0;
+    for (const r of recs) {
+      const d = rwDay(r && r.date), a = +(r && r.availableVehicles), t = +(r && r.totalVehicles);
+      if (!Number.isFinite(d) || !Number.isFinite(a)) { bad++; continue; }
+      const tt = Number.isFinite(t) ? t : 0, c = catField ? String(r[catField]) : '–';
+      if (locField) locs.add(String(r[locField]));
+      add(all, d, a, tt);
+      if (!cats.has(c)) cats.set(c, new Map());
+      add(cats.get(c), d, a, tt);
+      if (d < lo) lo = d; if (d > hi) hi = d;
+    }
+    if (!all.size) return null;
+    return { all, cats, order: [...cats.keys()], catField, locField, locs: locs.size, range: [lo, hi], n: recs.length, bad };
+  }
+  // m : Map jour → { a: dispo, t: flotte }. Jours sans donnée ignorés ; une flotte nulle (catégorie vide) ne donne pas d'occupation.
+  function fleetAgg(m, s, e) {
+    if (!m) return null;
+    let a = 0, t = 0, n = 0, fleet = 0, over = 0, minAvail = null, minDay = null, peak = null, peakDay = null;
+    for (let d = s; d <= e; d += D) {
+      const x = m.get(d); if (!x) continue;
+      n++; a += x.a; t += x.t; if (x.t > fleet) fleet = x.t;
+      if (x.a < 0) over++;
+      if (minAvail == null || x.a < minAvail) { minAvail = x.a; minDay = d; }
+      const o = x.t > 0 ? 1 - x.a / x.t : null;
+      if (o != null && (peak == null || o > peak)) { peak = o; peakDay = d; }
+    }
+    if (!n) return null;
+    return { days: n, avail: a, fleetDays: t, fleet, occ: t > 0 ? 1 - a / t : null, peak, peakDay, minAvail, minDay, overDays: over };
+  }
+  const occThOf = o => (o && Array.isArray(o.occTh) && o.occTh.length === 3 ? o.occTh : OCC_TH);
+  // Niveau d'une occupation (fraction) : -1 sans flotte, 0 marge, 1 confortable, 2 limite, 3 pic, 4 surbooking (dispo négative).
+  function occLevel(v, th, overDays) {
+    if (overDays > 0) return 4;
+    if (v == null || !Number.isFinite(v)) return -1;
+    const p = v * 100, T = th || OCC_TH;
+    return p >= T[2] ? 3 : p >= T[1] ? 2 : p >= T[0] ? 1 : 0;
+  }
+  // Une catégorie est « en tension » sur une zone si son jour le plus chargé atteint la limite (ou si elle est en surbooking).
+  function fleetZoneStats(F, from, to, opts) {
+    const th = occThOf(opts), [lo, hi] = F.range;
+    const s = Math.max(from, lo), e = Math.min(to, hi);
+    const nDays = e >= s ? Math.round((e - s) / D) + 1 : 0, full = Math.round((to - from) / D) + 1;
+    const all = nDays ? fleetAgg(F.all, s, e) : null;
+    const cats = F.order.map(c => Object.assign({ cat: c }, (nDays && fleetAgg(F.cats.get(c), s, e)) || {}));
+    const tense = cats.filter(c => occLevel(c.peak, th, c.overDays) >= 2).map(c => c.cat);
+    return { from, to, nDays, full, all, cats, tense };
+  }
+  // Cumulé : du premier palier jusqu'à la fin de celui-ci → le jour le plus chargé que traverse une location de cette durée (le goulot).
+  const fleetCumZones = (F, zones, opts) => zones.map(z => Object.assign({ label: z.label, a: z.a, b: z.b, ci: z.ci },
+    fleetZoneStats(F, Math.min(...zones.filter(o => o.b <= z.b).map(o => o.from)), z.to, opts)));
+
   // ---------- état persistant : valeurs par défaut et mise à niveau (pures, testées sous Node) ----------
   // rolesSchema : les réglages de séries (maps) et le graphique forcé (dataIdx) enregistrés avant que les dispositions réelles de WeYield
   // soient connues étaient faux (des volumes servaient de prix). Quand le schéma change, on les remet à zéro UNE fois : ne pas toucher à `v`,
   // sinon l'état repasserait par la migration v1/v2 et perdrait grille et paliers.
   const ROLES_SCHEMA = 2;
   const stateDefaults = () => ({ v: 3, rolesSchema: ROLES_SCHEMA, periods: true, tiers: true, signals: true, tierList: parseTiers(DEFAULT_TIERS).tiers.map(t => t.slice()),
-    gridDate: '', gridNum: 1, gridLen: 1, gridUnit: 'w', offset: 0, dataIdx: null, dataKey: null, maps: {} });
+    gridDate: '', gridNum: 1, gridLen: 1, gridUnit: 'w', offset: 0, dataIdx: null, dataKey: null, maps: {}, occTh: OCC_TH.slice() });
   function upgradeState(raw) {
     const s = Object.assign(stateDefaults(), raw);
     if (raw.rolesSchema !== ROLES_SCHEMA) { s.maps = {}; s.dataIdx = null; s.dataKey = null; s.rolesSchema = ROLES_SCHEMA; }
+    const th = s.occTh;
+    if (!Array.isArray(th) || th.length !== 3 || !th.every(Number.isFinite) || th[0] > th[1] || th[1] > th[2]) s.occTh = OCC_TH.slice();
     return s;
   }
 
@@ -112,7 +183,24 @@
       num2(r.dLy), num2(r.dLyf)].join('\t')));
     return lines.join('\n');
   }
+  // Balance de flotte : une ligne par zone (station entière), puis la matrice catégories × zones (pic d'occupation).
+  const pc2 = v => (v == null ? '' : num2(v * 100));
+  const day2 = t => (t == null ? '' : isoDay(t));
+  function fleetTSV(rows) {
+    const head = ['Zone', 'Début', 'Fin', 'Jours visibles', 'Occupation moy. %', 'Pic %', 'Jour du pic', 'Dispo min', 'Jour dispo min', 'Jours en surbooking', 'Catégories en tension'];
+    const lines = [head.join('\t')];
+    rows.forEach(r => { const a = r.all || {}; lines.push([r.label, isoDay(r.from), isoDay(r.to), r.nDays, pc2(a.occ), pc2(a.peak), day2(a.peakDay),
+      a.minAvail == null ? '' : a.minAvail, day2(a.minDay), a.overDays == null ? '' : a.overDays, (r.tense || []).join(' ')].join('\t')); });
+    return lines.join('\n');
+  }
+  function fleetCatsTSV(zones) {
+    const cats = zones.length ? zones[0].cats.map(c => c.cat) : [];
+    const lines = [['Catégorie (pic %)'].concat(zones.map(z => `${z.label} (${isoDay(z.from)} → ${isoDay(z.to)})`)).join('\t')];
+    cats.forEach((c, i) => lines.push([c].concat(zones.map(z => pc2(z.cats[i] && z.cats[i].peak))).join('\t')));
+    return lines.join('\n');
+  }
 
   Object.assign(WY, { D, DEFAULT_TIERS, ROLES, ROLE_LABEL, ROLES_SCHEMA, stateDefaults, upgradeState, PALETTE, utcDay, isoDay, parseISO, mondayOf, fmtDM, fmtDMY,
-    parseTiers, tiersToText, j0Of, tierZones, gridLenDays, makeGrid, agg, pct, zoneStats, cumZones, toTSV });
+    parseTiers, tiersToText, j0Of, tierZones, gridLenDays, makeGrid, agg, pct, zoneStats, cumZones, toTSV,
+    OCC_TH, OCC_LEVELS, rwDay, fleetFromRecords, fleetAgg, occLevel, fleetZoneStats, fleetCumZones, fleetTSV, fleetCatsTSV });
 })(typeof window !== 'undefined' ? window : globalThis);

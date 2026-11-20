@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Yield WeYield – panneau latéral",
-  "version": "3.4.0",
-  "description": "Périodes et paliers (cost-breaks) sur le graphique Réservations de WeYield, RPJ N / N-1 / N-1 final et signaux prix × rythme (règles et Jev) dans un panneau latéral.",
+  "version": "3.5.0",
+  "description": "Périodes et paliers (cost-breaks) sur le graphique Réservations de WeYield et sur la Balance de flotte Rentway ; RPJ N / N-1, signaux et occupation dans un panneau latéral.",
   "minimum_chrome_version": "114",
   "permissions": [
     "sidePanel",
@@ -10,13 +10,14 @@
   ],
   "host_permissions": [
     "https://apps.weyield.io/*",
+    "https://rentwayv1.emotionmobility.com/*",
     "https://api.typesafe.ai/*"
   ],
   "background": {
     "service_worker": "src/background.js"
   },
   "action": {
-    "default_title": "Yield WeYield – ouvrir le panneau"
+    "default_title": "Yield – ouvrir le panneau"
   },
   "side_panel": {
     "default_path": "src/panel/panel.html"
@@ -42,7 +43,20 @@
     },
     {
       "matches": [
-        "https://apps.weyield.io/*"
+        "https://rentwayv1.emotionmobility.com/*"
+      ],
+      "js": [
+        "src/core.js",
+        "src/pivot.js",
+        "src/engine.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://apps.weyield.io/*",
+        "https://rentwayv1.emotionmobility.com/*"
       ],
       "js": [
         "src/relay.js"
