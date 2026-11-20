@@ -15,10 +15,10 @@
   .container{padding:16px 24px}
   .v-card{background:#fff;border:1px solid #ddd;padding:8px}
   table{border-collapse:collapse}
-  .dx-pivotgrid-border{table-layout:fixed}
+  .dx-pivotgrid-border{table-layout:fixed;width:var(--gw,960px)}
   .dx-area-description-cell,.dx-area-row-cell{width:240px;vertical-align:top;padding:0}
-  .dx-area-column-cell,.dx-area-data-cell{padding:0;vertical-align:top}
-  .dx-scrollable-container{overflow:hidden;width:720px}
+  .dx-area-column-cell,.dx-area-data-cell{padding:0;vertical-align:top;width:var(--cw,720px)}
+  .dx-scrollable-container{overflow:hidden;width:var(--cw,720px)}
   .dx-area-column-cell td{box-sizing:border-box;height:86px;padding:7px 10px;vertical-align:top;text-align:center;border:1px solid #e3e3e3;color:#666;overflow:hidden;word-break:break-all}
   .dx-area-data-cell td,.dx-area-row-cell td{box-sizing:border-box;height:34px;padding:6px 4px;text-align:center;border:1px solid #e3e3e3;overflow:hidden}
   .dx-area-row-cell td{text-align:left;color:#666}
@@ -32,7 +32,12 @@
 <div id="detail"></div>
 <script>
 (() => {
-  const CATS = [['MBMR', 60], ['ECMR', 55], ['EDMR', 90], ['IFMR', 25], ['IVMD', 0], ['SFAD', 12]];
+  // ?full : les 21 catégories de l'agence (flottes fictives), pour les captures du README ; sinon 6 catégories (banc de test).
+  const FULL = new URLSearchParams(location.search).has('full');
+  const CATS = FULL
+    ? [['MBMR', 50], ['ECMR', 50], ['EDMR', 80], ['EBAR', 20], ['ECAR', 20], ['EDAE', 5], ['IFMR', 25], ['CDAD', 25], ['IVMD', 0], ['IVMR', 15], ['IFAR', 15],
+      ['DFAR', 5], ['SFAD', 10], ['LVMD', 10], ['VPIW', 15], ['KMIW', 8], ['VGIW', 5], ['VOIW', 3], ['VMPW', 3], ['XKMR', 3], ['MDAE', 2]]
+    : [['MBMR', 60], ['ECMR', 55], ['EDMR', 90], ['IFMR', 25], ['IVMD', 0], ['SFAD', 12]];
   const LOC = 'PTP /AEROPORT DE PTP';
   const WIDTHS = [44, 45, 47, 46, 41, 43, 48];   // largeurs observées, variables d'une colonne à l'autre
   const pad = n => String(n).padStart(2, '0');
@@ -44,7 +49,9 @@
       for (let i = 0; i < days; i++) {
         const dt = new Date(Date.UTC(y, m - 1, d + i)), mo = dt.getUTCMonth(), da = dt.getUTCDate();
         const xmas = (mo === 11 && da >= 20) || (mo === 0 && da <= 3) ? 1 : 0;
-        const occ = Math.min(1.05, 0.5 + 0.25 * Math.sin((i + ci * 3 + seed) / 5) + 0.3 * xmas + ci * 0.02);
+        const occ = FULL
+          ? Math.min(1.03, 0.42 + 0.18 * Math.sin((i + ci * 3 + seed) / 5) + 0.32 * xmas + (ci % 5) * 0.025)
+          : Math.min(1.05, 0.5 + 0.25 * Math.sin((i + ci * 3 + seed) / 5) + 0.3 * xmas + ci * 0.02);
         out.push({ locationID: 'APT', locationName: LOC, groupID: g, date: dt.toISOString().slice(0, 10) + 'T00:00:00',
           availableVehicles: fleet ? Math.round(fleet * (1 - occ)) : 0, totalVehicles: fleet });
       }
